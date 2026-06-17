@@ -620,17 +620,31 @@ function App() {
     setLoading(true);
     try {
       let allLabels = [...labels];
+      let newlyMatchedCount = 0;
       for (const f of files) {
         addToast('Procesando PDF', f.name);
         const parsed = await parseLabelsPDF(f);
-        // merge, avoid duplicates
-        parsed.forEach(lbl => { if (!allLabels.find(x=>x.id===lbl.id)) allLabels.push(lbl); });
+        parsed.forEach(lbl => {
+          if (allLabels.find(x=>x.id===lbl.id)) return; // already present, skip
+          // Re-sync: if this label's id was already scanned before (e.g. label was
+          // deleted and the PDF re-uploaded), restore its matched status from scans
+          const priorScan = scans.find(s => s.scannedId === lbl.id || s.labelId === lbl.id);
+          if (priorScan) {
+            lbl.matched = true;
+            lbl.matchedAt = priorScan.ts;
+            newlyMatchedCount++;
+          }
+          allLabels.push(lbl);
+        });
       }
       // Check heavy SKUs
       const heavyInBatch = allLabels.filter(l => heavySkus.includes(l.sku));
       if (heavyInBatch.length > 0) {
         const locs = [...new Set(heavyInBatch.map(l=>l.loc||l.cp||'?'))].join(', ');
         addToast(`⚖️ ${heavyInBatch.length} envío(s) PESADO(S)`, `Localidades: ${locs} — Pagan doble viaje`, 'alarm');
+      }
+      if (newlyMatchedCount > 0) {
+        addToast('Escaneos restaurados', `${newlyMatchedCount} etiqueta(s) recuperaron su estado "Escaneado" según escaneos previos de esta sesión`);
       }
       setLabels(allLabels);
       // pdfCacheKey points to in-memory data only — strip it before persisting to Firestore
@@ -875,7 +889,7 @@ function App() {
                               <td>
                                 <button className="btn btn-ghost" style={{padding:'5px 9px',fontSize:13}}
                                   title="Borrar esta etiqueta"
-                                  onClick={()=>{ if(confirm(`¿Borrar la etiqueta ${l.id}?`)) deleteLabel(l.id); }}>
+                                  onClick={()=>{ const msg = l.matched ? `La etiqueta ${l.id} ya fue escaneada. El registro del escaneo se conserva, pero quedará sin etiqueta vinculada hasta que vuelvas a cargar el PDF. ¿Borrar igual?` : `¿Borrar la etiqueta ${l.id}?`; if(confirm(msg)) deleteLabel(l.id); }}>
                                   🗑
                                 </button>
                               </td>
@@ -976,7 +990,7 @@ function App() {
                         <div key={l.id} style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:8,padding:12,width:140,position:'relative'}}>
                           <button className="btn btn-ghost" style={{position:'absolute',top:6,right:6,padding:'3px 6px',fontSize:11,zIndex:1}}
                             title="Borrar esta etiqueta"
-                            onClick={()=>{ if(confirm(`¿Borrar la etiqueta ${l.id}?`)) deleteLabel(l.id); }}>
+                            onClick={()=>{ const msg = l.matched ? `La etiqueta ${l.id} ya fue escaneada. El registro del escaneo se conserva, pero quedará sin etiqueta vinculada hasta que vuelvas a cargar el PDF. ¿Borrar igual?` : `¿Borrar la etiqueta ${l.id}?`; if(confirm(msg)) deleteLabel(l.id); }}>
                             🗑
                           </button>
                           {l.thumb && <img src={l.thumb} style={{width:'100%',borderRadius:4,marginBottom:8,cursor:'pointer'}} onClick={()=>setImgModal(l)} />}
