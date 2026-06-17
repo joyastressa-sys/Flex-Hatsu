@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FLEX Tracker — Control de Entregas</title>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
+
+<!-- PDF.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<!-- React -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3248;
+    --accent: #f5c518;
+    --accent2: #e05c2a;
+    --green: #22c55e;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --text: #e8eaf0;
+    --muted: #8891a8;
+    --radius: 10px;
+    --font: 'Segoe UI', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
+
+  /* LAYOUT */
+  .app { display: flex; flex-direction: column; min-height: 100vh; }
+  .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-badge { background: var(--accent); color: #000; font-weight: 900; font-size: 13px; padding: 4px 8px; border-radius: 5px; letter-spacing: 1px; }
+  .logo-text { font-size: 16px; font-weight: 600; color: var(--text); }
+  .header-right { display: flex; align-items: center; gap: 10px; }
+
+  .nav { background: var(--surface); border-bottom: 1px solid var(--border); display: flex; overflow-x: auto; }
+  .nav-btn { padding: 12px 18px; background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; font-weight: 500; white-space: nowrap; border-bottom: 2px solid transparent; transition: all .2s; }
+  .nav-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .nav-btn:hover { color: var(--text); }
+
+  .main { flex: 1; padding: 20px; max-width: 960px; margin: 0 auto; width: 100%; }
+
+  /* CARDS */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+  .card-title { font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 16px; }
+
+  /* BUTTONS */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: 7px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; transition: all .15s; }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover { background: #ffd43b; }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-danger:hover { background: #dc2626; }
+  .btn-success { background: var(--green); color: #000; }
+  .btn-success:hover { background: #16a34a; }
+  .btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: var(--border); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* BADGES */
+  .badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .badge-green { background: rgba(34,197,94,.15); color: var(--green); }
+  .badge-red { background: rgba(239,68,68,.15); color: var(--red); }
+  .badge-yellow { background: rgba(245,197,24,.15); color: var(--accent); }
+  .badge-blue { background: rgba(59,130,246,.15); color: var(--blue); }
+
+  /* INPUTS */
+  .input { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 10px 14px; border-radius: 7px; font-size: 14px; width: 100%; outline: none; transition: border .15s; }
+  .input:focus { border-color: var(--accent); }
+  .input-row { display: flex; gap: 10px; align-items: center; }
+
+  /* STATS */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .stat { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .stat-val { font-size: 32px; font-weight: 800; line-height: 1; }
+  .stat-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  /* TABLE */
+  .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .tbl th { text-align: left; padding: 8px 12px; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; }
+  .tbl td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .tbl tr:last-child td { border-bottom: none; }
+  .tbl tr:hover td { background: rgba(255,255,255,.02); }
+
+  /* DROPZONE */
+  .dropzone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 40px 20px; text-align: center; cursor: pointer; transition: all .2s; }
+  .dropzone:hover, .dropzone.drag { border-color: var(--accent); background: rgba(245,197,24,.05); }
+  .dropzone-icon { font-size: 36px; margin-bottom: 10px; }
+  .dropzone-text { color: var(--muted); font-size: 14px; }
+
+  /* SESSION BAR */
+  .session-bar { display: flex; align-items: center; justify-content: space-between; background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.3); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 20px; }
+  .session-bar.closed { background: rgba(239,68,68,.1); border-color: rgba(239,68,68,.3); }
+
+  /* TOAST */
+  .toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; max-width: 340px; }
+  .toast { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: 0 8px 32px rgba(0,0,0,.4); animation: slideIn .3s ease; }
+  .toast.alarm { border-color: var(--red); background: #1f0d0d; }
+  .toast-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+  .toast-body { font-size: 13px; color: var(--muted); }
+  .toast-actions { display: flex; gap: 8px; margin-top: 10px; }
+  @keyframes slideIn { from { transform: translateX(120%); opacity:0; } to { transform: translateX(0); opacity:1; } }
+
+  /* MODAL */
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px; max-width: 520px; width: 100%; max-height: 80vh; overflow-y: auto; }
+  .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
+
+  /* SETUP */
+  .setup-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .setup-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 36px; max-width: 480px; width: 100%; }
+  .setup-logo { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
+
+  .progress-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 8px; }
+  .progress-fill { height: 100%; background: var(--accent); transition: width .3s; }
+
+  /* SCANNER INPUT */
+  .scan-input-wrap { position: relative; }
+  .scan-input-wrap .input { padding-left: 42px; font-size: 15px; }
+  .scan-icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 18px; pointer-events: none; }
+
+  /* CONFIG TAB */
+  .config-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .config-row .input { flex: 1; }
+
+  /* RESPONSIVE */
+  @media(max-width:600px) {
+    .main { padding: 12px; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .stat-val { font-size: 24px; }
+    .modal { padding: 20px; }
+  }
+
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty { text-align: center; padding: 40px 20px; color: var(--muted); }
+  .empty-icon { font-size: 40px; margin-bottom: 10px; }
+
+  .label-thumb { width: 90px; height: 120px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); cursor: pointer; transition: transform .15s; }
+  .label-thumb:hover { transform: scale(1.05); }
+  .label-thumb:hover { border-color: var(--accent); }
+
+  .chip { display: inline-flex; align-items: center; gap: 4px; background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px; font-size: 12px; margin: 2px; }
+
+  .section-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ─── FIREBASE CONFIG ──────────────────────────────────────────────────────────
+const FIREBASE_CONFIG_KEY = 'flex_tracker_firebase_config';
+
+const HARDCODED_CONFIG = {
+  apiKey: "AIzaSyC_3Udlx1rr6VxILkT1lBRfdb6goaC47ik",
+  authDomain: "app-flex-hatsu.firebaseapp.com",
+  projectId: "app-flex-hatsu",
+  storageBucket: "app-flex-hatsu.firebasestorage.app",
+  messagingSenderId: "905341004454",
+  appId: "1:905341004454:web:6538670e11f8a951a5e267",
+  measurementId: "G-K18NFD94ZK"
+};
+
+function getStoredConfig() {
+  return HARDCODED_CONFIG;
+}
+
+// ─── AUDIO ALARM ─────────────────────────────────────────────────────────────
+function playAlarm() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const times = [0, 0.3, 0.6];
+    times.forEach(t => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = 880;
+      osc.type = 'square';
+      gain.gain.setValueAtTime(0.3, ctx.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.25);
+      osc.start(ctx.currentTime + t);
+      osc.stop(ctx.currentTime + t + 0.25);
+    });
+  } catch(e) {}
+}
+
+// ─── PDF PARSER ──────────────────────────────────────────────────────────────
+const pdfBufferCache = {}; // fileName -> ArrayBuffer (in-memory, this browser session only)
+
+async function parseLabelsPDF(file) {
+  const pdfjsLib = window['pdfjs-dist/build/pdf'];
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  const buf = await file.arrayBuffer();
+  // Keep a copy in memory so we can re-render any page in HD instantly, no upload needed
+  const cacheKey = `${file.name}_${file.size}`;
+  pdfBufferCache[cacheKey] = buf.slice(0); // slice(0) clones, since pdf.js consumes the buffer
+
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const labels = [];
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const tc = await page.getTextContent();
+    const text = tc.items.map(it => it.str).join(' ');
+
+    // Extract fields
+    const shipId = (text.match(/Envio[:\s]+(\d[\d\s]{6,12}\d)/i) || [])[1]?.replace(/\s/g,'') || null;
+    const packId = (text.match(/Pack ID[:\s]*([\d]+)/i) || [])[1] || null;
+    const sku    = (text.match(/SKU[:\s:]*([A-Z0-9\-]+)/i) || [])[1] || null;
+    const cp     = (text.match(/CP[:\s]*(\d{4,5})/i) || [])[1] || null;
+    const dest   = (text.match(/Destinatario[:\s]*([^\n(]+)/i) || [])[1]?.trim() || null;
+    const loc    = (text.match(/\b(TIGRE|PILAR|ESCOBAR|GARÍN|DERQUI|DON TORCUATO|MALVINAS ARGENTINAS|GRAND BOURG|LOS POLVORINES|VILLA ROSA|ZÁRATE|CAMPANA|SAN ISIDRO|VICENTE LÓPEZ|OLIVOS|MUNRO|FLORIDA|MARTÍNEZ|SAN FERNANDO|PACHECO|PALERMO|BELGRANO|CABALLITO|FLORES|VILLA CRESPO|ALMAGRO|BOEDO|NÚÑEZ|SAAVEDRA|VILLA URQUIZA|DEVOTO|MONTE GRANDE|AVELLANEDA|QUILMES|BERAZATEGUI|FLORENCIO VARELA|LANÚS|LOMAS DE ZAMORA|BANFIELD|TEMPERLEY|ADROGUÉ|BURZACO|GLEW|CAÑUELAS|MORÓN|HAEDO|RAMOS MEJÍA|SAN JUSTO|MERLO|MORENO|ITUZAINGÓ|CASTELAR|PALERMO|RECOLETA|SAN TELMO|MICROCENTRO|[A-Z\s]{5,})\b/i) || [])[1]?.trim() || null;
+    const dateM  = (text.match(/(\d{1,2}\s+(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC))/i) || [])[1] || null;
+    const seller = (text.match(/^([A-ZÁÉÍÓÚ\s]+)\s+#\d/m) || [])[1]?.trim() || null;
+
+    // Render SMALL thumbnail only (lightweight, for the list view + Firestore storage)
+    const viewport = page.getViewport({ scale: 0.5 });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width; canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    const thumb = canvas.toDataURL('image/jpeg', 0.75);
+
+    if (shipId || packId) {
+      labels.push({ id: shipId || packId, shipId, packId, sku, cp, dest, loc, dateLabel: dateM, seller, thumb, page: i, matched: false, text, pdfCacheKey: cacheKey, hdThumb: null });
+    }
+  }
+  return labels;
+}
+
+// ─── HIGH-RES PAGE RENDER (on-demand, from in-memory PDF buffer — no upload/cloud needed) ──
+async function renderHighResPage(cacheKey, pageNum) {
+  const pdfjsLib = window['pdfjs-dist/build/pdf'];
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  const buf = pdfBufferCache[cacheKey];
+  if (!buf) throw new Error('PDF no disponible en memoria — recargá el PDF para ver en alta resolución');
+
+  const pdf = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
+  const page = await pdf.getPage(pageNum);
+  const viewport = page.getViewport({ scale: 3 });
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width; canvas.height = viewport.height;
+  await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+  return canvas.toDataURL('image/jpeg', 0.92);
+}
+
+// ─── TOAST COMPONENT ─────────────────────────────────────────────────────────
+function ToastContainer({ toasts, onAction, onDismiss }) {
+  return (
+    <div className="toast-container">
+      {toasts.map(t => (
+        <div key={t.id} className={`toast ${t.alarm ? 'alarm' : ''}`}>
+          <div className="toast-title">{t.alarm ? '🚨 ' : ''}{t.title}</div>
+          <div className="toast-body">{t.body}</div>
+          {t.actions && (
+            <div className="toast-actions">
+              {t.actions.map(a => (
+                <button key={a.label} className={`btn btn-${a.variant||'ghost'}`} style={{fontSize:12,padding:'6px 12px'}}
+                  onClick={() => { onAction(t.id, a.value); onDismiss(t.id); }}>
+                  {a.label}
+                </button>
+              ))}
+              <button className="btn btn-ghost" style={{fontSize:12,padding:'6px 12px'}} onClick={() => onDismiss(t.id)}>✕</button>
+            </div>
+          )}
+          {!t.actions && (
+            <button className="btn btn-ghost" style={{fontSize:12,padding:'4px 10px',marginTop:8}} onClick={() => onDismiss(t.id)}>Cerrar</button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── FIREBASE SETUP SCREEN ────────────────────────────────────────────────────
+function SetupScreen({ onSave }) {
+  const [cfg, setCfg] = useState({ apiKey:'', authDomain:'', projectId:'', storageBucket:'', messagingSenderId:'', appId:'' });
+  const [err, setErr] = useState('');
+
+  const save = () => {
+    if (!cfg.apiKey || !cfg.projectId) { setErr('apiKey y projectId son obligatorios'); return; }
+    localStorage.setItem(FIREBASE_CONFIG_KEY, JSON.stringify(cfg));
+    onSave(cfg);
+  };
+
+  const fields = [
+    ['apiKey','API Key'],['authDomain','Auth Domain'],['projectId','Project ID'],
+    ['storageBucket','Storage Bucket'],['messagingSenderId','Messaging Sender ID'],['appId','App ID']
+  ];
+
+  return (
+    <div className="setup-wrap">
+      <div className="setup-card">
+        <div className="setup-logo">
+          <span className="logo-badge">FLEX</span>
+          <span style={{fontSize:18,fontWeight:700}}>Tracker — Configuración inicial</span>
+        </div>
+        <p style={{color:'var(--muted)',fontSize:13,marginBottom:24,lineHeight:1.6}}>
+          Pegá los datos de tu proyecto Firebase (Consola Firebase → Configuración del proyecto → Tus apps → SDK). Solo se guarda en este dispositivo.
+        </p>
+        {fields.map(([k,label]) => (
+          <div key={k} style={{marginBottom:12}}>
+            <label style={{fontSize:12,color:'var(--muted)',display:'block',marginBottom:4}}>{label}</label>
+            <input className="input" placeholder={label} value={cfg[k]} onChange={e => setCfg(p=>({...p,[k]:e.target.value}))} />
+          </div>
+        ))}
+        {err && <p style={{color:'var(--red)',fontSize:13,marginBottom:12}}>{err}</p>}
+        <button className="btn btn-primary" style={{width:'100%',justifyContent:'center',marginTop:8}} onClick={save}>
+          Conectar Firebase →
+        </button>
+        <p style={{color:'var(--muted)',fontSize:11,marginTop:14,textAlign:'center'}}>
+          Esta configuración solo se guarda localmente en este navegador
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── LABEL IMAGE MODAL (HD render from in-memory PDF, or saved hdThumb fallback) ──
+function LabelImageModal({ label, onClose }) {
+  const [hdSrc, setHdSrc] = useState(label.hdThumb || null);
+  const [loadingHd, setLoadingHd] = useState(false);
+  const [hdError, setHdError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!label.hdThumb && label.pdfCacheKey && label.page) {
+      setLoadingHd(true);
+      setHdError(false);
+      renderHighResPage(label.pdfCacheKey, label.page).then(src => {
+        if (!cancelled) { setHdSrc(src); setLoadingHd(false); }
+      }).catch(() => {
+        if (!cancelled) { setHdError(true); setLoadingHd(false); }
+      });
+    }
+    return () => { cancelled = true; };
+  }, [label.pdfCacheKey, label.page, label.hdThumb]);
+
+  const displaySrc = hdSrc || label.thumb;
+  const statusMsg = label.hdThumb ? '✓ Alta resolución (guardada)'
+    : loadingHd ? '⏳ Generando alta resolución desde el PDF...'
+    : hdSrc ? '✓ Alta resolución'
+    : hdError ? '⚠️ El PDF original ya no está en memoria — recargalo para ver en HD'
+    : '';
+
+  return (
+    <div className="overlay" onClick={onClose} style={{padding:16,paddingTop:60,alignItems:'flex-start'}}>
+      <div style={{position:'relative',width:'min(94vw, 480px)',maxHeight:'88vh',display:'flex',flexDirection:'column',alignItems:'center',margin:'0 auto'}} onClick={e=>e.stopPropagation()}>
+        <button className="btn btn-ghost" onClick={onClose} style={{position:'absolute',top:-44,right:0}}>✕ Cerrar</button>
+        {statusMsg && (
+          <div style={{position:'absolute',top:-44,left:0,fontSize:12,color:'var(--muted)',lineHeight:'36px',maxWidth:'60%'}}>{statusMsg}</div>
+        )}
+        <div style={{width:'100%',maxHeight:'80vh',overflowY:'auto',borderRadius:8,border:'2px solid var(--border)',background:'#fff'}}>
+          <img src={displaySrc} style={{width:'100%',height:'auto',display:'block'}} />
+        </div>
+        {label.id && (
+          <div style={{marginTop:12,background:'var(--surface)',border:'1px solid var(--border)',borderRadius:8,padding:'10px 16px',fontSize:13,color:'var(--muted)',textAlign:'center',maxWidth:'96vw'}}>
+            <strong style={{color:'var(--text)'}}>{label.id}</strong> · {label.dest||'—'} · {label.loc||'—'} · CP {label.cp||'—'}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+function App() {
+  const [firebaseCfg, setFirebaseCfg] = useState(getStoredConfig);
+  const [db, setDb] = useState(null);
+  const [storage, setStorage] = useState(null);
+  const [tab, setTab] = useState('sesion');
+  const [toasts, setToasts] = useState([]);
+
+  // App state
+  const [session, setSession] = useState(null);       // active session doc
+  const [labels, setLabels] = useState([]);            // labels from PDFs
+  const [scans, setScans] = useState([]);              // scans this session
+  const [heavySkus, setHeavySkus] = useState([]);      // heavy SKU list
+  const [zones, setZones] = useState([]);              // zone tariff table
+  const [loading, setLoading] = useState(false);
+  const [scanInput, setScanInput] = useState('');
+  const [pendingModal, setPendingModal] = useState(null);
+  const [imgModal, setImgModal] = useState(null);
+  const [selectedLabels, setSelectedLabels] = useState([]);
+  const [sessions, setSessions] = useState([]);        // past sessions
+  const scanRef = useRef(null);
+
+  // ── Init Firebase ──
+  useEffect(() => {
+    if (!firebaseCfg) return;
+    try {
+      let app;
+      if (window.firebase.apps.length) app = window.firebase.app();
+      else app = window.firebase.initializeApp(firebaseCfg);
+      setDb(window.firebase.firestore(app));
+      setStorage(window.firebase.storage(app));
+    } catch(e) { addToast('Error Firebase','Verificá la configuración','error'); }
+  }, [firebaseCfg]);
+
+  // ── Load data from Firestore ──
+  useEffect(() => {
+    if (!db) return;
+    // today's session
+    const today = new Date().toISOString().slice(0,10);
+    db.collection('sessions').where('date','==',today).limit(1).get().then(snap => {
+      if (!snap.empty) {
+        const d = snap.docs[0];
+        const s = { id: d.id, ...d.data() };
+        setSession(s);
+        setLabels(s.labels || []);
+        setScans(s.scans || []);
+      }
+    });
+    // config
+    db.collection('config').doc('heavy_skus').get().then(d => { if(d.exists) setHeavySkus(d.data().list||[]); });
+    db.collection('config').doc('zones').get().then(d => { if(d.exists) setZones(d.data().list||[]); });
+    // past sessions
+    db.collection('sessions').orderBy('date','desc').limit(30).get().then(snap => {
+      setSessions(snap.docs.map(d=>({id:d.id,...d.data()})));
+    });
+  }, [db]);
+
+  // ── Check yesterday's unmatched on load ──
+  useEffect(() => {
+    if (!db || !session) return;
+    const yesterday = new Date(); yesterday.setDate(yesterday.getDate()-1);
+    const yStr = yesterday.toISOString().slice(0,10);
+    db.collection('sessions').where('date','==',yStr).limit(1).get().then(snap => {
+      if (snap.empty) return;
+      const d = snap.docs[0].data();
+      const unmatched = (d.labels||[]).filter(l => !l.matched && !l.discarded);
+      if (unmatched.length > 0) {
+        setPendingModal({ sessionId: snap.docs[0].id, date: yStr, items: unmatched });
+      }
+    });
+  }, [db, session?.id]);
+
+  // ── Toast helpers ──
+  const addToast = useCallback((title, body, type='info', actions=null) => {
+    const id = Date.now() + Math.random();
+    setToasts(p => [...p, { id, title, body, alarm: type==='alarm', actions }]);
+    if (type === 'alarm') playAlarm();
+    if (!actions) setTimeout(() => setToasts(p => p.filter(t=>t.id!==id)), 5000);
+  }, []);
+
+  const handleToastAction = useCallback((toastId, value) => {
+    // value = 'add_scan' or 'ignore'
+    if (value === 'add_scan' && db && session) {
+      const raw = toasts.find(t=>t.id===toastId)?.scanRaw;
+      if (!raw) return;
+      const newScan = { raw, ts: new Date().toISOString(), matched: false, manual: true };
+      const updated = [...scans, newScan];
+      setScans(updated);
+      db.collection('sessions').doc(session.id).update({ scans: updated });
+    }
+  }, [db, session, scans, toasts]);
+
+  const dismissToast = id => setToasts(p => p.filter(t=>t.id!==id));
+
+  // ── Open Session ──
+  const openSession = async () => {
+    if (!db) return;
+    const today = new Date().toISOString().slice(0,10);
+    setLoading(true);
+    const existing = await db.collection('sessions').where('date','==',today).limit(1).get();
+    if (!existing.empty) {
+      const d = existing.docs[0];
+      const s = { id: d.id, ...d.data() };
+      setSession(s); setLabels(s.labels||[]); setScans(s.scans||[]);
+    } else {
+      const ref = await db.collection('sessions').add({ date: today, open: true, labels: [], scans: [], createdAt: new Date().toISOString() });
+      const s = { id: ref.id, date: today, open: true, labels: [], scans: [] };
+      setSession(s); setLabels([]); setScans([]);
+    }
+    setLoading(false);
+  };
+
+  // ── Close Session ──
+  const closeSession = async () => {
+    if (!db || !session) return;
+    setLoading(true);
+    try {
+      // Generate HD snapshots for unmatched labels while their PDF is still in memory,
+      // so they can be viewed clearly later even after the page reloads.
+      const stillUnmatched = labels.filter(l => !l.matched);
+      const updatedLabels = await Promise.all(labels.map(async (l) => {
+        if (l.matched || l.hdThumb || !l.pdfCacheKey) return l;
+        try {
+          const hd = await renderHighResPage(l.pdfCacheKey, l.page);
+          return { ...l, hdThumb: hd };
+        } catch {
+          return l; // PDF no longer in memory, keep as-is
+        }
+      }));
+      const toPersist = updatedLabels.map(({pdfCacheKey, ...rest}) => rest);
+      await db.collection('sessions').doc(session.id).update({ labels: toPersist, open: false, closedAt: new Date().toISOString() });
+      setLabels(updatedLabels);
+      setSession(p => ({...p, open: false}));
+      const m = updatedLabels.filter(l=>l.matched).length;
+      const u = updatedLabels.filter(l=>!l.matched).length;
+      addToast('Sesión cerrada', `${m} entregados · ${u} no entregados`);
+      setSessions(p => p.map(s => s.id===session.id ? {...s,open:false,labels:toPersist} : s));
+    } catch(err) {
+      addToast('Error al cerrar sesión', err.message || 'Intentá de nuevo', 'alarm');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Upload PDFs ──
+  const handlePDFDrop = async (e) => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer?.files || e.target.files).filter(f=>f.type==='application/pdf');
+    if (!files.length || !session?.open) return;
+    setLoading(true);
+    try {
+      let allLabels = [...labels];
+      for (const f of files) {
+        addToast('Procesando PDF', f.name);
+        const parsed = await parseLabelsPDF(f);
+        // merge, avoid duplicates
+        parsed.forEach(lbl => { if (!allLabels.find(x=>x.id===lbl.id)) allLabels.push(lbl); });
+      }
+      // Check heavy SKUs
+      const heavyInBatch = allLabels.filter(l => heavySkus.includes(l.sku));
+      if (heavyInBatch.length > 0) {
+        const locs = [...new Set(heavyInBatch.map(l=>l.loc||l.cp||'?'))].join(', ');
+        addToast(`⚖️ ${heavyInBatch.length} envío(s) PESADO(S)`, `Localidades: ${locs} — Pagan doble viaje`, 'alarm');
+      }
+      setLabels(allLabels);
+      // pdfCacheKey points to in-memory data only — strip it before persisting to Firestore
+      const toPersist = allLabels.map(({pdfCacheKey, ...rest}) => rest);
+      await db.collection('sessions').doc(session.id).update({ labels: toPersist });
+      addToast('PDF cargado', `${allLabels.length} etiquetas en sesión`);
+    } catch(err) {
+      addToast('Error procesando PDF', err.message || 'Ocurrió un error inesperado', 'alarm');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Scan QR ──
+  const handleScan = async (raw) => {
+    if (!raw.trim() || !session?.open) return;
+    setScanInput('');
+
+    // Parse scanned data
+    const idMatch = raw.match(/id[Ñ\[]+(\d+)/i);
+    const scannedId = idMatch?.[1] || raw.trim();
+
+    // Try to match
+    const matchIdx = labels.findIndex(l => l.id === scannedId || l.shipId === scannedId || l.packId === scannedId);
+
+    if (matchIdx === -1) {
+      // No match — alarm
+      const newToast = { id: Date.now()+Math.random(), title: '🚨 Escaneo sin etiqueta', body: `ID: ${scannedId} — No está en los PDFs cargados. ¿Agregar como envío manual?`, alarm: true, scanRaw: raw, actions: [{ label: 'Sí, agregar', value: 'add_scan', variant: 'primary' }, { label: 'Ignorar', value: 'ignore', variant: 'ghost' }] };
+      setToasts(p => [...p, newToast]);
+      playAlarm();
+    } else {
+      // Match!
+      const updLabels = labels.map((l,i) => i===matchIdx ? {...l, matched:true, matchedAt: new Date().toISOString()} : l);
+      const newScan = { raw, scannedId, ts: new Date().toISOString(), matched: true, labelId: labels[matchIdx].id };
+      const updScans = [...scans, newScan];
+      setLabels(updLabels);
+      setScans(updScans);
+      await db.collection('sessions').doc(session.id).update({ labels: updLabels, scans: updScans });
+      addToast('✅ Paquete registrado', `Envío ${scannedId} — ${labels[matchIdx].dest || labels[matchIdx].loc || ''}`);
+    }
+    scanRef.current?.focus();
+  };
+
+  // ── Computed ──
+  const matched   = labels.filter(l => l.matched);
+  const unmatched = labels.filter(l => !l.matched);
+  const manualScans = scans.filter(s => s.manual);
+
+  // ── Delete label(s) ──
+  const deleteLabel = async (id) => {
+    if (!db || !session) return;
+    const updated = labels.filter(l => l.id !== id);
+    setLabels(updated);
+    await db.collection('sessions').doc(session.id).update({ labels: updated });
+    addToast('Etiqueta eliminada', id);
+  };
+
+  const deleteLabels = async (ids) => {
+    if (!db || !session) return;
+    const idSet = new Set(ids);
+    const updated = labels.filter(l => !idSet.has(l.id));
+    setLabels(updated);
+    await db.collection('sessions').doc(session.id).update({ labels: updated });
+    addToast('Etiquetas eliminadas', `${ids.length} etiqueta(s) borradas`);
+  };
+
+  // ── Pending Modal ──
+  const handlePending = async (action) => {
+    if (!db || !pendingModal) return;
+    const updates = pendingModal.items.map(l => ({...l, discarded: action==='discard'}));
+    // update that session
+    const snap = await db.collection('sessions').doc(pendingModal.sessionId).get();
+    const existing = snap.data().labels || [];
+    const merged = existing.map(l => updates.find(u=>u.id===l.id) || l);
+    await db.collection('sessions').doc(pendingModal.sessionId).update({ labels: merged });
+    if (action==='keep') {
+      // Bring to today
+      const todayUnmatched = updates.map(l=>({...l, fromDate: pendingModal.date, matched:false}));
+      const mergedToday = [...labels, ...todayUnmatched.filter(l=>!labels.find(x=>x.id===l.id))];
+      setLabels(mergedToday);
+      if (session) await db.collection('sessions').doc(session.id).update({ labels: mergedToday });
+      addToast('Etiquetas importadas', `${todayUnmatched.length} etiqueta(s) del ${pendingModal.date} agregadas a hoy`);
+    }
+    setPendingModal(null);
+  };
+
+  // ─────────────────────────── RENDER ───────────────────────────────────────
+
+  // config hardcoded, no setup needed
+
+  const tabs = [
+    {id:'sesion', label:'📦 Sesión'},
+    {id:'escanear', label:'📷 Escanear'},
+    {id:'resumen', label:'📊 Resumen'},
+    {id:'historial', label:'🗓 Historial'},
+    {id:'config', label:'⚙️ Config'},
+  ];
+
+  return (
+    <div className="app">
+      <ToastContainer toasts={toasts} onAction={handleToastAction} onDismiss={dismissToast} />
+
+      {/* Pending modal */}
+      {pendingModal && (
+        <div className="overlay">
+          <div className="modal">
+            <div className="modal-title">📋 Etiquetas pendientes de ayer ({pendingModal.date})</div>
+            <p style={{color:'var(--muted)',fontSize:13,marginBottom:16}}>
+              {pendingModal.items.length} etiqueta(s) del día anterior no tuvieron escaneo. ¿Qué hacemos?
+            </p>
+            <div style={{maxHeight:200,overflowY:'auto',marginBottom:16}}>
+              {pendingModal.items.map(l => (
+                <div key={l.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
+                  {l.thumb && <img src={l.thumb} className="label-thumb" onClick={()=>setImgModal(l)} />}
+                  <div>
+                    <div style={{fontSize:13,fontWeight:600}}>{l.id}</div>
+                    <div style={{fontSize:12,color:'var(--muted)'}}>{l.dest} · {l.loc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{display:'flex',gap:10}}>
+              <button className="btn btn-primary" onClick={()=>handlePending('keep')}>
+                📥 Mantener para hoy
+              </button>
+              <button className="btn btn-danger" onClick={()=>handlePending('discard')}>
+                🗑 Descartar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image modal */}
+      {imgModal && <LabelImageModal label={imgModal} onClose={()=>setImgModal(null)} />}
+
+
+      <header className="header">
+        <div className="logo">
+          <span className="logo-badge">FLEX</span>
+          <span className="logo-text">Control de Entregas</span>
+        </div>
+        <div className="header-right">
+          {session && (
+            <span className={`badge ${session.open ? 'badge-green' : 'badge-red'}`}>
+              {session.open ? '● Sesión abierta' : '○ Sesión cerrada'} {session.date}
+            </span>
+          )}
+
+        </div>
+      </header>
+
+      <nav className="nav">
+        {tabs.map(t => <button key={t.id} className={`nav-btn ${tab===t.id?'active':''}`} onClick={()=>setTab(t.id)}>{t.label}</button>)}
+      </nav>
+
+      <main className="main">
+
+        {/* ── SESIÓN TAB ── */}
+        {tab==='sesion' && (
+          <>
+            <div className="section-title">Sesión del día</div>
+
+            {!session ? (
+              <div className="card" style={{textAlign:'center',padding:40}}>
+                <div style={{fontSize:40,marginBottom:12}}>📦</div>
+                <p style={{color:'var(--muted)',marginBottom:20}}>No hay sesión abierta para hoy</p>
+                <button className="btn btn-primary" onClick={openSession} disabled={loading}>
+                  {loading ? <span className="spinner"/> : null} Abrir sesión de hoy
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className={`session-bar ${session.open?'':'closed'}`}>
+                  <div>
+                    <strong>{session.date}</strong>
+                    <span style={{marginLeft:12,color:'var(--muted)',fontSize:13}}>
+                      {session.open ? 'Sesión activa — podés cargar PDFs y escanear' : 'Sesión cerrada'}
+                    </span>
+                  </div>
+                  {session.open && (
+                    <button className="btn btn-danger" onClick={closeSession}>Cerrar sesión</button>
+                  )}
+                </div>
+
+                <div className="stats">
+                  <div className="stat"><div className="stat-val">{labels.length}</div><div className="stat-label">Etiquetas cargadas</div></div>
+                  <div className="stat"><div className="stat-val" style={{color:'var(--green)'}}>{matched.length}</div><div className="stat-label">Escaneados ✓</div></div>
+                  <div className="stat"><div className="stat-val" style={{color:'var(--accent)'}}>{unmatched.length}</div><div className="stat-label">Sin escanear</div></div>
+                  <div className="stat"><div className="stat-val" style={{color:'var(--blue)'}}>{manualScans.length}</div><div className="stat-label">Envíos manuales</div></div>
+                </div>
+
+                {/* Upload PDFs */}
+                {session.open && (
+                  <div className="card">
+                    <div className="card-title">Cargar etiquetas PDF</div>
+                    <div className="dropzone" onDragOver={e=>e.preventDefault()} onDrop={handlePDFDrop} onClick={()=>document.getElementById('pdfInput').click()}>
+                      <div className="dropzone-icon">{loading ? '⏳' : '📄'}</div>
+                      <div className="dropzone-text">{loading ? 'Procesando PDF...' : 'Arrastrá los PDF de etiquetas aquí, o hacé click'}</div>
+                      <input id="pdfInput" type="file" accept=".pdf" multiple style={{display:'none'}} onChange={handlePDFDrop} />
+                    </div>
+                    {loading && <div className="progress-bar" style={{marginTop:8}}><div className="progress-fill" style={{width:'60%'}} /></div>}
+                  </div>
+                )}
+
+                {/* Labels table */}
+                {labels.length > 0 && (
+                  <div className="card">
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+                      <div className="card-title" style={{marginBottom:0}}>Etiquetas en sesión ({labels.length})</div>
+                      {selectedLabels.length > 0 && (
+                        <button className="btn btn-danger" style={{fontSize:12,padding:'6px 12px'}}
+                          onClick={()=>{ if(confirm(`¿Borrar ${selectedLabels.length} etiqueta(s) seleccionada(s)?`)){ deleteLabels(selectedLabels); setSelectedLabels([]); } }}>
+                          🗑 Borrar {selectedLabels.length} seleccionada(s)
+                        </button>
+                      )}
+                    </div>
+                    <div style={{overflowX:'auto'}}>
+                      <table className="tbl">
+                        <thead><tr>
+                          <th style={{width:30}}>
+                            <input type="checkbox" checked={selectedLabels.length===labels.length && labels.length>0}
+                              onChange={e=>setSelectedLabels(e.target.checked ? labels.map(l=>l.id) : [])} />
+                          </th>
+                          <th>Etiqueta</th><th>Envío ID</th><th>SKU</th><th>Destinatario</th><th>Localidad</th><th>CP</th><th>Estado</th><th></th>
+                        </tr></thead>
+                        <tbody>
+                          {labels.map(l => (
+                            <tr key={l.id}>
+                              <td>
+                                <input type="checkbox" checked={selectedLabels.includes(l.id)}
+                                  onChange={e=> setSelectedLabels(p => e.target.checked ? [...p,l.id] : p.filter(x=>x!==l.id)) } />
+                              </td>
+                              <td>{l.thumb && <img src={l.thumb} className="label-thumb" onClick={()=>setImgModal(l)} />}</td>
+                              <td style={{fontFamily:'monospace',fontSize:12}}>{l.id}</td>
+                              <td><span className="chip">{l.sku||'—'}</span>{heavySkus.includes(l.sku) && <span className="badge badge-yellow" style={{marginLeft:4}}>⚖️ Pesado</span>}</td>
+                              <td style={{fontSize:12}}>{l.dest||'—'}</td>
+                              <td>{l.loc||'—'}</td>
+                              <td>{l.cp||'—'}</td>
+                              <td>{l.matched ? <span className="badge badge-green">✓ Escaneado</span> : <span className="badge badge-yellow">Pendiente</span>}</td>
+                              <td>
+                                <button className="btn btn-ghost" style={{padding:'5px 9px',fontSize:13}}
+                                  title="Borrar esta etiqueta"
+                                  onClick={()=>{ if(confirm(`¿Borrar la etiqueta ${l.id}?`)) deleteLabel(l.id); }}>
+                                  🗑
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        {/* ── ESCANEAR TAB ── */}
+        {tab==='escanear' && (
+          <>
+            <div className="section-title">Escanear paquetes</div>
+            {!session?.open ? (
+              <div className="card empty"><div className="empty-icon">🔒</div><p>Abrí una sesión para escanear</p></div>
+            ) : (
+              <>
+                <div className="card">
+                  <div className="card-title">Apuntá la pistola lectora aquí</div>
+                  <div className="scan-input-wrap">
+                    <span className="scan-icon">▦</span>
+                    <input
+                      ref={scanRef}
+                      className="input"
+                      value={scanInput}
+                      onChange={e=>setScanInput(e.target.value)}
+                      onKeyDown={e=>{ if(e.key==='Enter') handleScan(scanInput); }}
+                      placeholder="Escaneá el QR del paquete o escribí el ID..."
+                      autoFocus
+                    />
+                  </div>
+                  <p style={{color:'var(--muted)',fontSize:12,marginTop:8}}>La pistola lectora hace Enter automáticamente al terminar de leer el QR</p>
+                </div>
+
+                <div className="stats">
+                  <div className="stat"><div className="stat-val" style={{color:'var(--green)'}}>{matched.length}</div><div className="stat-label">Entregados a moto</div></div>
+                  <div className="stat"><div className="stat-val" style={{color:'var(--accent)'}}>{unmatched.length}</div><div className="stat-label">Restantes</div></div>
+                </div>
+
+                {scans.length > 0 && (
+                  <div className="card">
+                    <div className="card-title">Escaneos de esta sesión ({scans.length})</div>
+                    <div style={{overflowX:'auto'}}>
+                      <table className="tbl">
+                        <thead><tr><th>ID</th><th>Hora</th><th>Tipo</th></tr></thead>
+                        <tbody>
+                          {[...scans].reverse().map((s,i) => (
+                            <tr key={i}>
+                              <td style={{fontFamily:'monospace',fontSize:12}}>{s.scannedId || s.raw?.slice(0,30)}</td>
+                              <td style={{fontSize:12,color:'var(--muted)'}}>{new Date(s.ts).toLocaleTimeString('es-AR')}</td>
+                              <td>{s.manual ? <span className="badge badge-blue">Manual</span> : <span className="badge badge-green">FLEX</span>}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        {/* ── RESUMEN TAB ── */}
+        {tab==='resumen' && (
+          <>
+            <div className="section-title">Resumen de sesión</div>
+            {!session ? (
+              <div className="card empty"><div className="empty-icon">📊</div><p>No hay sesión activa</p></div>
+            ) : (
+              <>
+                <div className="stats">
+                  <div className="stat"><div className="stat-val">{labels.length}</div><div className="stat-label">Total etiquetas</div></div>
+                  <div className="stat"><div className="stat-val" style={{color:'var(--green)'}}>{matched.length}</div><div className="stat-label">Entregados a moto</div></div>
+                  <div className="stat"><div className="stat-val" style={{color:'var(--red)'}}>{unmatched.length}</div><div className="stat-label">No escaneados</div></div>
+                  <div className="stat"><div className="stat-val" style={{color:'var(--accent)'}}>{labels.filter(l=>heavySkus.includes(l.sku)).length}</div><div className="stat-label">⚖️ Pesados</div></div>
+                </div>
+
+                {unmatched.length > 0 && (
+                  <div className="card">
+                    <div className="card-title" style={{color:'var(--accent)'}}>⚠️ Sin escanear — No entregados a moto</div>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:12}}>
+                      {unmatched.map(l => (
+                        <div key={l.id} style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:8,padding:12,width:140,position:'relative'}}>
+                          <button className="btn btn-ghost" style={{position:'absolute',top:6,right:6,padding:'3px 6px',fontSize:11,zIndex:1}}
+                            title="Borrar esta etiqueta"
+                            onClick={()=>{ if(confirm(`¿Borrar la etiqueta ${l.id}?`)) deleteLabel(l.id); }}>
+                            🗑
+                          </button>
+                          {l.thumb && <img src={l.thumb} style={{width:'100%',borderRadius:4,marginBottom:8,cursor:'pointer'}} onClick={()=>setImgModal(l)} />}
+                          <div style={{fontSize:11,fontFamily:'monospace',wordBreak:'break-all'}}>{l.id}</div>
+                          <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{l.loc||l.cp||'—'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Zone summary */}
+                {zones.length > 0 && labels.length > 0 && (
+                  <div className="card">
+                    <div className="card-title">Estimación de costo ({session.date})</div>
+                    <div style={{overflowX:'auto'}}>
+                      <table className="tbl">
+                        <thead><tr><th>Zona/Localidad</th><th>Cant.</th><th>Pesados</th><th>Tarifa</th><th>Subtotal</th></tr></thead>
+                        <tbody>
+                          {zones.map(z => {
+                            const inZone = matched.filter(l => (l.loc||'').toLowerCase().includes(z.name.toLowerCase()) || (l.cp||'') === z.cp);
+                            const heavyInZone = inZone.filter(l=>heavySkus.includes(l.sku));
+                            const total = inZone.length * z.price + heavyInZone.length * z.price; // heavy pays double (extra)
+                            if (inZone.length === 0) return null;
+                            return (
+                              <tr key={z.name}>
+                                <td>{z.name}</td>
+                                <td>{inZone.length}</td>
+                                <td>{heavyInZone.length > 0 ? <span className="badge badge-yellow">⚖️ {heavyInZone.length}</span> : '—'}</td>
+                                <td>${z.price.toLocaleString('es-AR')}</td>
+                                <td style={{fontWeight:700}}>${total.toLocaleString('es-AR')}</td>
+                              </tr>
+                            );
+                          }).filter(Boolean)}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        {/* ── HISTORIAL TAB ── */}
+        {tab==='historial' && (
+          <>
+            <div className="section-title">Historial de sesiones</div>
+            {sessions.length === 0 ? (
+              <div className="card empty"><div className="empty-icon">🗓</div><p>No hay sesiones guardadas</p></div>
+            ) : (
+              <div className="card">
+                <div style={{overflowX:'auto'}}>
+                  <table className="tbl">
+                    <thead><tr><th>Fecha</th><th>Etiquetas</th><th>Escaneados</th><th>No escaneados</th><th>Estado</th></tr></thead>
+                    <tbody>
+                      {sessions.map(s => {
+                        const lbs = s.labels||[];
+                        const sc = lbs.filter(l=>l.matched);
+                        const un = lbs.filter(l=>!l.matched);
+                        return (
+                          <tr key={s.id}>
+                            <td style={{fontWeight:600}}>{s.date}</td>
+                            <td>{lbs.length}</td>
+                            <td><span className="badge badge-green">{sc.length}</span></td>
+                            <td>{un.length > 0 ? <span className="badge badge-yellow">{un.length}</span> : <span className="badge badge-green">0</span>}</td>
+                            <td>{s.open ? <span className="badge badge-blue">Abierta</span> : <span className="badge badge-red">Cerrada</span>}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── CONFIG TAB ── */}
+        {tab==='config' && (
+          <>
+            <ConfigPanel db={db} heavySkus={heavySkus} setHeavySkus={setHeavySkus} zones={zones} setZones={setZones} addToast={addToast} />
+          </>
+        )}
+
+      </main>
+    </div>
+  );
+}
+
+// ─── CONFIG PANEL ─────────────────────────────────────────────────────────────
+function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast }) {
+  const [newSku, setNewSku] = useState('');
+  const [newZone, setNewZone] = useState({ name:'', cp:'', price:'' });
+
+  const addSku = async () => {
+    if (!newSku.trim()) return;
+    const updated = [...heavySkus, newSku.trim().toUpperCase()];
+    setHeavySkus(updated);
+    setNewSku('');
+    if (db) await db.collection('config').doc('heavy_skus').set({ list: updated });
+    addToast('SKU agregado', newSku.trim().toUpperCase());
+  };
+
+  const removeSku = async (sku) => {
+    const updated = heavySkus.filter(s=>s!==sku);
+    setHeavySkus(updated);
+    if (db) await db.collection('config').doc('heavy_skus').set({ list: updated });
+  };
+
+  const addZone = async () => {
+    if (!newZone.name || !newZone.price) return;
+    const z = { name: newZone.name, cp: newZone.cp, price: Number(newZone.price) };
+    const updated = [...zones, z];
+    setZones(updated);
+    setNewZone({ name:'', cp:'', price:'' });
+    if (db) await db.collection('config').doc('zones').set({ list: updated });
+    addToast('Zona agregada', z.name);
+  };
+
+  const removeZone = async (name) => {
+    const updated = zones.filter(z=>z.name!==name);
+    setZones(updated);
+    if (db) await db.collection('config').doc('zones').set({ list: updated });
+  };
+
+  return (
+    <>
+      <div className="section-title">Configuración</div>
+
+      {/* Heavy SKUs */}
+      <div className="card">
+        <div className="card-title">⚖️ SKUs de envíos pesados (pagan doble)</div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:16}}>
+          {heavySkus.length === 0 && <span style={{color:'var(--muted)',fontSize:13}}>No hay SKUs cargados</span>}
+          {heavySkus.map(s => (
+            <span key={s} className="chip" style={{cursor:'pointer'}} onClick={()=>removeSku(s)}>
+              {s} <span style={{color:'var(--red)',marginLeft:4}}>✕</span>
+            </span>
+          ))}
+        </div>
+        <div className="input-row">
+          <input className="input" placeholder="Ej: A158WA-1D" value={newSku} onChange={e=>setNewSku(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addSku()} />
+          <button className="btn btn-primary" onClick={addSku}>Agregar</button>
+        </div>
+      </div>
+
+      {/* Zones */}
+      <div className="card">
+        <div className="card-title">🗺 Tarifas por zona/localidad</div>
+        {zones.length > 0 && (
+          <div style={{overflowX:'auto',marginBottom:16}}>
+            <table className="tbl">
+              <thead><tr><th>Zona/Localidad</th><th>CP</th><th>Tarifa ($)</th><th></th></tr></thead>
+              <tbody>
+                {zones.map(z => (
+                  <tr key={z.name}>
+                    <td>{z.name}</td>
+                    <td>{z.cp||'—'}</td>
+                    <td>${z.price.toLocaleString('es-AR')}</td>
+                    <td><button className="btn btn-ghost" style={{padding:'4px 8px',fontSize:12}} onClick={()=>removeZone(z.name)}>✕</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 100px 120px auto',gap:8,alignItems:'center'}}>
+          <input className="input" placeholder="Localidad" value={newZone.name} onChange={e=>setNewZone(p=>({...p,name:e.target.value}))} />
+          <input className="input" placeholder="CP" value={newZone.cp} onChange={e=>setNewZone(p=>({...p,cp:e.target.value}))} />
+          <input className="input" placeholder="$ tarifa" type="number" value={newZone.price} onChange={e=>setNewZone(p=>({...p,price:e.target.value}))} />
+          <button className="btn btn-primary" onClick={addZone}>Agregar</button>
+        </div>
+        <p style={{color:'var(--muted)',fontSize:12,marginTop:10}}>Los envíos pesados se calculan como tarifa × 2</p>
+      </div>
+
+
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
