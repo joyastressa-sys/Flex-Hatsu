@@ -385,6 +385,23 @@ function generateSessionReport(session, labels, scans, zones, heavySkus) {
     </tbody>
   </table>` : '<p style="color:#888;margin-top:16px">No hay tarifas configuradas para este período.</p>'}
 
+  <h2>Detalle de paquetes entregados (${matched.length})</h2>
+  <table>
+    <thead><tr><th>#</th><th>Envío ID</th><th>Destinatario</th><th>CP</th><th>Partido / Localidad</th><th>Tipo</th><th>SKU</th></tr></thead>
+    <tbody>
+      ${matched.map((l, i) => `
+      <tr>
+        <td style="color:#999;font-size:11px">${i+1}</td>
+        <td style="font-family:monospace;font-size:11px">${l.id}</td>
+        <td style="font-size:12px">${l.dest||'—'}</td>
+        <td style="font-size:12px;font-weight:600">${l.cp||'—'}</td>
+        <td style="font-size:12px">${[l.partido,l.loc].filter(Boolean).join(' / ')||'—'}</td>
+        <td style="font-size:11px"><span style="background:${l.tipoEnvio==='COMERCIAL'?'#dbeafe':'#dcfce7'};color:${l.tipoEnvio==='COMERCIAL'?'#1d4ed8':'#166534'};padding:2px 6px;border-radius:4px;font-weight:600">${l.tipoEnvio||'—'}</span></td>
+        <td style="font-size:11px;color:#888">${l.sku||'—'}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+
   <div class="footer">
     <span>FLEX Tracker — Control de Entregas</span>
     <span>Sesión: ' + session.id + '</span>
@@ -436,12 +453,14 @@ async function parseLabelsPDF(file) {
     let cp = null;
     let loc = null;
     let partido = null;
+    let tipoEnvio = null;
 
-    const destBlock = text.match(/\bCP:\s*(\d{4,5})\s+([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ\s\-]{2,35?}?)\s+([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ\s\-]{2,35?}?)\s+(?:RESIDENCIAL|COMERCIAL)/i);
+    const destBlock = text.match(/\bCP:\s*(\d{4,5})\s+([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ\s\-]{2,35?}?)\s+([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ\s\-]{2,35?}?)\s+(RESIDENCIAL|COMERCIAL)/i);
     if (destBlock) {
       cp      = destBlock[1]?.trim() || null;
       partido = destBlock[2]?.trim().replace(/\s+/g,' ') || null;
       loc     = destBlock[3]?.trim().replace(/\s+/g,' ') || null;
+      tipoEnvio = destBlock[4]?.toUpperCase() || null;
     } else {
       // Fallback: just grab CP: number (still destination since we require the colon)
       const cpOnly = text.match(/\bCP:\s*(\d{4,5})/i);
@@ -457,7 +476,7 @@ async function parseLabelsPDF(file) {
 
     if (shipId || packId || ventaId) {
       const id = shipId || packId || ventaId;
-      labels.push({ id, shipId, packId, ventaId, sku, cp, partido, dest, loc, dateLabel: dateM, seller, thumb, page: i, matched: false, text, pdfCacheKey: cacheKey, hdThumb: null });
+      labels.push({ id, shipId, packId, ventaId, sku, cp, partido, dest, loc, tipoEnvio, dateLabel: dateM, seller, thumb, page: i, matched: false, text, pdfCacheKey: cacheKey, hdThumb: null });
     }
   }
   return labels;
