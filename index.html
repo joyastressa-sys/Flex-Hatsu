@@ -221,7 +221,9 @@ function calcSessionCost(sessionLabels, zones, heavySkus) {
   // Priority: 1) exact CP match, 2) normalized text contains zone name as whole word, 3) null
   const findZone = (label) => {
     const lcp = (label.cp||'').trim();
-    const lLoc = norm(label.loc);
+    // Build a combined location string from partido + localidad for text matching
+    const locText = [label.partido, label.loc].filter(Boolean).join(' ');
+    const lLoc = norm(locText);
 
     // 1) CP exact match
     if (lcp) {
@@ -238,8 +240,8 @@ function calcSessionCost(sessionLabels, zones, heavySkus) {
       }
     }
 
-    // 2) Text match: zone name is fully contained in label's loc (word boundary)
-    // Sort by name length descending so more specific zones win (e.g. "EL TALAR PACHECO" beats "PACHECO")
+    // 2) Text match: zone name is fully contained in label's partido+loc (word boundary)
+    // Sort by name length descending so more specific zones win
     const textCandidates = [...zones]
       .sort((a,b) => b.name.length - a.name.length)
       .filter(z => {
@@ -426,27 +428,31 @@ async function parseLabelsPDF(file) {
     // Extract fields
     const shipId = (text.match(/Envio[:\s]+(\d[\d\s]{6,12}\d)/i) || [])[1]?.replace(/\s/g,'') || null;
     const packId = (text.match(/Pack ID[:\s]*([\d]+)/i) || [])[1] || null;
-    const sku    = (text.match(/SKU[:\s:]*([A-Z0-9\-]+)/i) || [])[1] || null;
-    const cp     = (text.match(/CP[:\s]*(\d{4,5})/i) || [])[1] || null;
+    const ventaId = (text.match(/Venta[:\s]+([\d\s]{10,})/i) || [])[1]?.replace(/\s/g,'') || null;
+    const sku    = (text.match(/SKU[:\s:]*([A-Z0-9\-\/]+)/i) || [])[1] || null;
     const dest   = (text.match(/Destinatario[:\s]*([^\n(]+)/i) || [])[1]?.trim() || null;
-    // Extract location: look for the bold locality text that appears after the QR block in FLEX labels.
-    // Pattern: CP: XXXX (newline) LOCALITY (newline) BARRIO/NEIGHBORHOOD
-    // We extract the text between the CP number and "RESIDENCIAL"/"COMERCIAL" marker.
-    let loc = null;
-    const cpLocMatch = text.match(/\bcp[:\s]*(\d{4,5})[^A-ZÁ-Ú]*([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ\s]{3,40}?)\s*(?:RESIDENCIAL|COMERCIAL|Residencial|Comercial)/i);
-    if (cpLocMatch) {
-      // The locality is between the CP number and RESIDENCIAL/COMERCIAL
-      loc = cpLocMatch[2]?.trim().replace(/\s+/g,' ') || null;
-    }
-    if (!loc) {
-      // Fallback: known localities list (strict, no catchall)
-      const knownLocs = ['TIGRE','PILAR','ESCOBAR','GARÍN','DERQUI','DON TORCUATO','MALVINAS ARGENTINAS','GRAND BOURG','LOS POLVORINES','VILLA ROSA','ZÁRATE','CAMPANA','SAN ISIDRO','VICENTE LÓPEZ','OLIVOS','MUNRO','FLORIDA','MARTÍNEZ','SAN FERNANDO','PACHECO','PALERMO','BELGRANO','CABALLITO','FLORES','VILLA CRESPO','ALMAGRO','BOEDO','NÚÑEZ','SAAVEDRA','VILLA URQUIZA','DEVOTO','MONTE GRANDE','AVELLANEDA','QUILMES','BERAZATEGUI','FLORENCIO VARELA','LANÚS','LOMAS DE ZAMORA','BANFIELD','TEMPERLEY','ADROGUÉ','BURZACO','GLEW','CAÑUELAS','MORÓN','HAEDO','RAMOS MEJÍA','SAN JUSTO','MERLO','MORENO','ITUZAINGÓ','CASTELAR','RECOLETA','SAN TELMO','MICROCENTRO','ALMIRANTE BROWN','JOSE MARMOL','PUERTO MADERO','VILLA BOSCH','TRES DE FEBRERO'];
-      for (const kl of knownLocs) {
-        if (text.toUpperCase().includes(kl)) { loc = kl; break; }
-      }
-    }
     const dateM  = (text.match(/(\d{1,2}\s+(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC))/i) || [])[1] || null;
     const seller = (text.match(/^([A-ZÁÉÍÓÚ\s]+)\s+#\d/m) || [])[1]?.trim() || null;
+
+    // Extract destination CP and locality from the block AFTER the QR code.
+    // The FLEX label structure (as plain text) is:
+    //   ... FLEX 18 JUN CP: 1872 AVELLANEDA SARANDÍ RESIDENCIAL Direccion: ...
+    // CP with colon is always the DESTINATION cp (sender uses "CP 1041" without colon).
+    // We capture: CP: XXXX  PARTIDO  LOCALIDAD  (RESIDENCIAL|COMERCIAL)
+    let cp = null;
+    let loc = null;
+    let partido = null;
+
+    const destBlock = text.match(/\bCP:\s*(\d{4,5})\s+([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ\s\-]{2,35?}?)\s+([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ\s\-]{2,35?}?)\s+(?:RESIDENCIAL|COMERCIAL)/i);
+    if (destBlock) {
+      cp      = destBlock[1]?.trim() || null;
+      partido = destBlock[2]?.trim().replace(/\s+/g,' ') || null;
+      loc     = destBlock[3]?.trim().replace(/\s+/g,' ') || null;
+    } else {
+      // Fallback: just grab CP: number (still destination since we require the colon)
+      const cpOnly = text.match(/\bCP:\s*(\d{4,5})/i);
+      if (cpOnly) cp = cpOnly[1].trim();
+    }
 
     // Render SMALL thumbnail only (lightweight, for the list view + Firestore storage)
     const viewport = page.getViewport({ scale: 0.5 });
@@ -455,8 +461,9 @@ async function parseLabelsPDF(file) {
     await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
     const thumb = canvas.toDataURL('image/jpeg', 0.75);
 
-    if (shipId || packId) {
-      labels.push({ id: shipId || packId, shipId, packId, sku, cp, dest, loc, dateLabel: dateM, seller, thumb, page: i, matched: false, text, pdfCacheKey: cacheKey, hdThumb: null });
+    if (shipId || packId || ventaId) {
+      const id = shipId || packId || ventaId;
+      labels.push({ id, shipId, packId, ventaId, sku, cp, partido, dest, loc, dateLabel: dateM, seller, thumb, page: i, matched: false, text, pdfCacheKey: cacheKey, hdThumb: null });
     }
   }
   return labels;
@@ -1254,7 +1261,7 @@ function App() {
                               <td style={{fontFamily:'monospace',fontSize:12}}>{l.id}</td>
                               <td><span className="chip">{l.sku||'—'}</span>{heavySkus.includes(l.sku) && <span className="badge badge-yellow" style={{marginLeft:4}}>⚖️ Pesado</span>}</td>
                               <td style={{fontSize:12}}>{l.dest||'—'}</td>
-                              <td>{l.loc||'—'}</td>
+                              <td style={{fontSize:11}}>{[l.partido, l.loc].filter(Boolean).join(' / ') || '—'}</td>
                               <td>{l.cp||'—'}</td>
                               <td>{l.matched ? <span className="badge badge-green">✓ Escaneado</span> : <span className="badge badge-yellow">Pendiente</span>}</td>
                               <td>
