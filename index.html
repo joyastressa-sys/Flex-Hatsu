@@ -436,35 +436,60 @@ async function parseLabelsPDF(file) {
     const tc = await page.getTextContent();
     const text = tc.items.map(it => it.str).join(' ');
 
-    // Extract fields
+    // Extract fields — Mercado Libre FLEX format
     const shipId = (text.match(/Envio[:\s]+(\d[\d\s]{6,12}\d)/i) || [])[1]?.replace(/\s/g,'') || null;
     const packId = (text.match(/Pack ID[:\s]*([\d]+)/i) || [])[1] || null;
     const ventaId = (text.match(/Venta[:\s]+([\d\s]{10,})/i) || [])[1]?.replace(/\s/g,'') || null;
-    const sku    = (text.match(/SKU[:\s:]*([A-Z0-9\-\/]+)/i) || [])[1] || null;
-    const dest   = (text.match(/Destinatario[:\s]*([^\n(]+)/i) || [])[1]?.trim() || null;
-    const dateM  = (text.match(/(\d{1,2}\s+(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC))/i) || [])[1] || null;
-    const seller = (text.match(/^([A-ZÁÉÍÓÚ\s]+)\s+#\d/m) || [])[1]?.trim() || null;
 
-    // Extract destination CP and locality from the block AFTER the QR code.
-    // The FLEX label structure (as plain text) is:
-    //   ... FLEX 18 JUN CP: 1872 AVELLANEDA SARANDÍ RESIDENCIAL Direccion: ...
-    // CP with colon is always the DESTINATION cp (sender uses "CP 1041" without colon).
-    // We capture: CP: XXXX  PARTIDO  LOCALIDAD  (RESIDENCIAL|COMERCIAL)
+    // Agency / external label format (GURA-FLEX style):
+    //   Partido at start, Destinatario as name, phone, address CP:XXXX, Observación=SKU, Envio: N (short number)
+    const isAgencyLabel = !shipId && !packId && !ventaId && /\bEnvio[:\s]*\d{1,6}\b/i.test(text) && /\bRte[.:\s]/i.test(text);
+    const envioExterno = isAgencyLabel ? (text.match(/Envio[:\s]*(\d{1,10})/i) || [])[1] || null : null;
+
+    let sku    = (text.match(/SKU[:\s:]*([A-Z0-9\-\/]+)/i) || [])[1] || null;
+    // Agency labels use "Observación:" for the product/SKU reference
+    if (!sku && isAgencyLabel) sku = (text.match(/Observaci[oó]n[:\s]+([^\n]+)/i) || [])[1]?.trim() || null;
+
+    let dest   = (text.match(/Destinatario[:\s]*([^\n(]+)/i) || [])[1]?.trim() || null;
+    // Agency: destinatario is the bold name right after partido header
+    if (!dest && isAgencyLabel) {
+      const nameMatch = text.match(/^[A-ZÁÉÍÓÚ\s]+\s+\d{1,2}\/\d{1,2}\/\d{4}\s+(.+?)\s+\d{10}/m);
+      if (nameMatch) dest = nameMatch[1].trim();
+    }
+
+    const dateM  = (text.match(/(\d{1,2}\s+(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC))/i) || [])[1]
+      || (text.match(/(\d{1,2}\/\d{1,2}\/\d{4})/i) || [])[1] || null;
+    const seller = isAgencyLabel
+      ? (text.match(/Rte[.:\s]+([A-ZÁÉÍÓÚA-Za-z\s]+)/i) || [])[1]?.trim() || null
+      : (text.match(/^([A-ZÁÉÍÓÚ\s]+)\s+#\d/m) || [])[1]?.trim() || null;
+
+    // Extract destination CP and locality
     let cp = null;
     let loc = null;
     let partido = null;
     let tipoEnvio = null;
 
-    const destBlock = text.match(/\bCP:\s*(\d{4,5})\s+([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ\s\-]{2,35?}?)\s+([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ\s\-]{2,35?}?)\s+(RESIDENCIAL|COMERCIAL)/i);
-    if (destBlock) {
-      cp      = destBlock[1]?.trim() || null;
-      partido = destBlock[2]?.trim().replace(/\s+/g,' ') || null;
-      loc     = destBlock[3]?.trim().replace(/\s+/g,' ') || null;
-      tipoEnvio = destBlock[4]?.toUpperCase() || null;
+    if (isAgencyLabel) {
+      // Agency format: partido is in the top-left header, CP in address line "Av. Mitre 1500 CP: 1870"
+      const agencyCp = (text.match(/\bCP[:\s]*(\d{4,5})/i) || [])[1] || null;
+      cp = agencyCp;
+      // Partido is usually the first ALL-CAPS word(s) at the start of the label text
+      const partidoMatch = text.match(/^([A-ZÁÉÍÓÚÜÑ]{3,}(?:\s+[A-ZÁÉÍÓÚÜÑ]{3,})?)\s/);
+      partido = partidoMatch?.[1]?.trim() || null;
+      loc = partido; // for agency labels, partido = locality (no sub-barrio distinction)
+      tipoEnvio = null; // agency labels don't have RESIDENCIAL/COMERCIAL
     } else {
-      // Fallback: just grab CP: number (still destination since we require the colon)
-      const cpOnly = text.match(/\bCP:\s*(\d{4,5})/i);
-      if (cpOnly) cp = cpOnly[1].trim();
+      // FLEX format: extract from CP: XXXX PARTIDO LOCALIDAD RESIDENCIAL/COMERCIAL block
+      const destBlock = text.match(/\bCP:\s*(\d{4,5})\s+([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ\s\-]{2,35?}?)\s+([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ\s\-]{2,35?}?)\s+(RESIDENCIAL|COMERCIAL)/i);
+      if (destBlock) {
+        cp      = destBlock[1]?.trim() || null;
+        partido = destBlock[2]?.trim().replace(/\s+/g,' ') || null;
+        loc     = destBlock[3]?.trim().replace(/\s+/g,' ') || null;
+        tipoEnvio = destBlock[4]?.toUpperCase() || null;
+      } else {
+        const cpOnly = text.match(/\bCP:\s*(\d{4,5})/i);
+        if (cpOnly) cp = cpOnly[1].trim();
+      }
     }
 
     // Render SMALL thumbnail only (lightweight, for the list view + Firestore storage)
@@ -474,9 +499,15 @@ async function parseLabelsPDF(file) {
     await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
     const thumb = canvas.toDataURL('image/jpeg', 0.75);
 
-    if (shipId || packId || ventaId) {
-      const id = shipId || packId || ventaId;
-      labels.push({ id, shipId, packId, ventaId, sku, cp, partido, dest, loc, tipoEnvio, dateLabel: dateM, seller, thumb, page: i, matched: false, text, pdfCacheKey: cacheKey, hdThumb: null });
+    const labelId = shipId || packId || ventaId || envioExterno;
+    if (labelId) {
+      labels.push({
+        id: labelId, shipId, packId, ventaId, envioExterno,
+        sku, cp, partido, dest, loc, tipoEnvio,
+        dateLabel: dateM, seller, thumb, page: i,
+        matched: false, text, pdfCacheKey: cacheKey, hdThumb: null,
+        source: isAgencyLabel ? 'AGENCIA' : 'FLEX'
+      });
     }
   }
   return labels;
@@ -1017,22 +1048,51 @@ function App() {
     if (!raw.trim() || !session?.open) return;
     setScanInput('');
 
-    // Parse scanned data
-    const idMatch = raw.match(/id[Ñ\[]+(\d+)/i);
-    const scannedId = idMatch?.[1] || raw.trim();
+    // ── Parse scanned QR — support multiple formats ──
+    // Format 1 (Mercado Libre FLEX): id[Ñ[47299295741[,...
+    // Format 2 (GURA/agency):        local[ñ 1, [did[ñ [132012[, [cliente[ñ 11, [empresa[ñ 273
+    let scannedId = raw.trim();
+    let scanSource = 'FLEX';
 
-    // Try to match
-    const matchIdx = labels.findIndex(l => l.id === scannedId || l.shipId === scannedId || l.packId === scannedId);
+    const mlMatch = raw.match(/\bid[Ñ\[]+(\d+)/i);
+    const agencyDidMatch = raw.match(/\bdid[Ñ\[\s]+(\d+)/i);
+    const agencyEnvioMatch = raw.match(/envio[Ñ\[\s]*(\d+)/i);
+
+    if (mlMatch) {
+      scannedId = mlMatch[1];
+      scanSource = 'FLEX';
+    } else if (agencyDidMatch) {
+      scannedId = agencyDidMatch[1];
+      scanSource = 'AGENCIA';
+    } else if (agencyEnvioMatch) {
+      scannedId = agencyEnvioMatch[1];
+      scanSource = 'AGENCIA';
+    }
+
+    // Try to match against loaded labels
+    const matchIdx = labels.findIndex(l =>
+      l.id === scannedId ||
+      l.shipId === scannedId ||
+      l.packId === scannedId ||
+      l.ventaId === scannedId ||
+      l.envioExterno === scannedId
+    );
 
     if (matchIdx === -1) {
       // No match — alarm
-      const newToast = { id: Date.now()+Math.random(), title: '🚨 Escaneo sin etiqueta', body: `ID: ${scannedId} — No está en los PDFs cargados. ¿Agregar como envío manual?`, alarm: true, scanRaw: raw, actions: [{ label: 'Sí, agregar', value: 'add_scan', variant: 'primary' }, { label: 'Ignorar', value: 'ignore', variant: 'ghost' }] };
+      const newToast = {
+        id: Date.now()+Math.random(),
+        title: '🚨 Escaneo sin etiqueta',
+        body: `ID: ${scannedId} (${scanSource}) — No está en los PDFs cargados. ¿Agregar como envío manual?`,
+        alarm: true, scanRaw: raw, scanSource,
+        actions: [{ label: 'Sí, agregar', value: 'add_scan', variant: 'primary' }, { label: 'Ignorar', value: 'ignore', variant: 'ghost' }]
+      };
       setToasts(p => [...p, newToast]);
       playAlarm();
     } else {
       // Match!
       const updLabels = labels.map((l,i) => i===matchIdx ? {...l, matched:true, matchedAt: new Date().toISOString()} : l);
-      const newScan = { raw, scannedId, ts: new Date().toISOString(), matched: true, labelId: labels[matchIdx].id };
+      const newScan = { raw, scannedId, scanSource, ts: new Date().toISOString(), matched: true, labelId: labels[matchIdx].id };
       const updScans = [...scans, newScan];
       setLabels(updLabels);
       setScans(updScans);
@@ -1272,7 +1332,7 @@ function App() {
                               </td>
                               <td>{l.thumb && <img src={l.thumb} className="label-thumb" onClick={()=>setImgModal(l)} />}</td>
                               <td style={{fontFamily:'monospace',fontSize:12}}>{l.id}</td>
-                              <td><span className="chip">{l.sku||'—'}</span>{heavySkus.includes(l.sku) && <span className="badge badge-yellow" style={{marginLeft:4}}>⚖️ Pesado</span>}</td>
+                              <td><span className="chip">{l.sku||'—'}</span>{heavySkus.includes(l.sku) && <span className="badge badge-yellow" style={{marginLeft:4}}>⚖️ Pesado</span>}{l.source==='AGENCIA' && <span className="badge badge-blue" style={{marginLeft:4}}>Agencia</span>}</td>
                               <td style={{fontSize:12}}>{l.dest||'—'}</td>
                               <td style={{fontSize:11}}>{[l.partido, l.loc].filter(Boolean).join(' / ') || '—'}</td>
                               <td>{l.cp||'—'}</td>
@@ -1345,7 +1405,7 @@ function App() {
                             <tr key={i}>
                               <td style={{fontFamily:'monospace',fontSize:12}}>{s.scannedId || s.raw?.slice(0,30)}</td>
                               <td style={{fontSize:12,color:'var(--muted)'}}>{new Date(s.ts).toLocaleTimeString('es-AR')}</td>
-                              <td>{s.manual ? <span className="badge badge-blue">Manual</span> : <span className="badge badge-green">FLEX</span>}</td>
+                              <td>{s.manual ? <span className="badge badge-blue">Manual</span> : s.scanSource === 'AGENCIA' ? <span className="badge badge-yellow">Agencia</span> : <span className="badge badge-green">FLEX</span>}</td>
                             </tr>
                           ))}
                         </tbody>
