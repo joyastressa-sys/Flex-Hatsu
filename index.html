@@ -351,8 +351,12 @@ function generateSessionReport(session, labels, scans, zones, heavySkus) {
   .unmatched-section { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
   .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #999; display: flex; justify-content: space-between; }
   @media print {
-    body { padding: 12px; }
+    body { padding: 8mm; }
     .no-print { display: none; }
+    @page { size: A4; margin: 10mm; }
+    table { page-break-inside: auto; }
+    tr { page-break-inside: avoid; }
+    h2 { page-break-after: avoid; }
   }
 </style>
 </head>
@@ -389,16 +393,28 @@ function generateSessionReport(session, labels, scans, zones, heavySkus) {
   <table>
     <thead><tr><th>#</th><th>Envío ID</th><th>Destinatario</th><th>CP</th><th>Partido / Localidad</th><th>Tipo</th><th>SKU</th></tr></thead>
     <tbody>
-      ${matched.map((l, i) => `
+      ${matched.map((l, i) => {
+        // Re-extract partido/loc from text if missing (labels loaded before fix)
+        let pLoc = [l.partido, l.loc].filter(Boolean).join(' / ');
+        if (!pLoc && l.text) {
+          const db2 = l.text.match(/\bCP:\s*(\d{4,5})\s+([A-ZÁÉÍÓÚÜÑA-Z][A-ZÁÉÍÓÚÜÑA-Z\s\-]{2,35}?)\s+([A-ZÁÉÍÓÚÜÑA-Z][A-ZÁÉÍÓÚÜÑA-Z\s\-]{2,35}?)\s+(?:RESIDENCIAL|COMERCIAL)/i);
+          if (db2) pLoc = `${db2[2].trim()} / ${db2[3].trim()}`;
+        }
+        if (!pLoc) pLoc = l.cp || '—';
+        const tipo = l.tipoEnvio || (l.text && /COMERCIAL/i.test(l.text) ? 'COMERCIAL' : l.text && /RESIDENCIAL/i.test(l.text) ? 'RESIDENCIAL' : null);
+        const tipoBg = tipo === 'COMERCIAL' ? '#dbeafe' : '#dcfce7';
+        const tipoColor = tipo === 'COMERCIAL' ? '#1d4ed8' : '#166534';
+        return `
       <tr>
         <td style="color:#999;font-size:11px">${i+1}</td>
         <td style="font-family:monospace;font-size:11px">${l.id}</td>
         <td style="font-size:12px">${l.dest||'—'}</td>
         <td style="font-size:12px;font-weight:600">${l.cp||'—'}</td>
-        <td style="font-size:12px">${[l.partido,l.loc].filter(Boolean).join(' / ')||'—'}</td>
-        <td style="font-size:11px"><span style="background:${l.tipoEnvio==='COMERCIAL'?'#dbeafe':'#dcfce7'};color:${l.tipoEnvio==='COMERCIAL'?'#1d4ed8':'#166534'};padding:2px 6px;border-radius:4px;font-weight:600">${l.tipoEnvio||'—'}</span></td>
+        <td style="font-size:12px">${pLoc}</td>
+        <td style="font-size:11px">${tipo ? `<span style="background:${tipoBg};color:${tipoColor};padding:2px 6px;border-radius:4px;font-weight:600">${tipo}</span>` : '—'}</td>
         <td style="font-size:11px;color:#888">${l.sku||'—'}</td>
-      </tr>`).join('')}
+      </tr>`;
+      }).join('')}
     </tbody>
   </table>
 
@@ -1141,6 +1157,23 @@ function App() {
     addToast('Etiqueta eliminada', id);
   };
 
+  const deleteScan = async (scanTs) => {
+    if (!db || !session) return;
+    // Find the scan to remove and also un-match its linked label if any
+    const scanToDelete = scans.find(s => s.ts === scanTs);
+    const updScans = scans.filter(s => s.ts !== scanTs);
+    let updLabels = labels;
+    if (scanToDelete?.labelId) {
+      // Un-match the label that was matched by this scan
+      updLabels = labels.map(l => l.id === scanToDelete.labelId ? {...l, matched: false, matchedAt: null} : l);
+      setLabels(updLabels);
+    }
+    setScans(updScans);
+    const toPersist = updLabels.map(({pdfCacheKey, ...rest}) => rest);
+    await db.collection('sessions').doc(session.id).update({ labels: toPersist, scans: updScans });
+    addToast('Escaneo eliminado', scanToDelete?.scannedId || '');
+  };
+
   const deleteLabels = async (ids) => {
     if (!db || !session) return;
     const idSet = new Set(ids);
@@ -1467,13 +1500,20 @@ function App() {
                     <div className="card-title">Escaneos de esta sesión ({scans.length})</div>
                     <div style={{overflowX:'auto'}}>
                       <table className="tbl">
-                        <thead><tr><th>ID</th><th>Hora</th><th>Tipo</th></tr></thead>
+                        <thead><tr><th>ID</th><th>Hora</th><th>Tipo</th><th></th></tr></thead>
                         <tbody>
                           {[...scans].reverse().map((s,i) => (
                             <tr key={i}>
                               <td style={{fontFamily:'monospace',fontSize:12}}>{s.scannedId || s.raw?.slice(0,30)}</td>
                               <td style={{fontSize:12,color:'var(--muted)'}}>{new Date(s.ts).toLocaleTimeString('es-AR')}</td>
                               <td>{s.manual ? <span className="badge badge-blue">Manual</span> : s.scanSource === 'AGENCIA' ? <span className="badge badge-yellow">Agencia</span> : <span className="badge badge-green">FLEX</span>}</td>
+                              <td>
+                                <button className="btn btn-ghost" style={{padding:'4px 8px',fontSize:12}}
+                                  title="Eliminar este escaneo"
+                                  onClick={()=>{ if(confirm(`¿Eliminar el escaneo ${s.scannedId||''}? Si tenía una etiqueta vinculada, vuelve a quedar como pendiente.`)) deleteScan(s.ts); }}>
+                                  🗑
+                                </button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
