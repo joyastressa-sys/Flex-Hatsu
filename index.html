@@ -867,6 +867,7 @@ function App() {
   const [imgModal, setImgModal] = useState(null);
   const [selectedLabels, setSelectedLabels] = useState([]);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [agencyMatchModal, setAgencyMatchModal] = useState(null); // { raw, scannedId, candidates[] }
   const [sessions, setSessions] = useState([]);        // past sessions
   const scanRef = useRef(null);
 
@@ -1083,16 +1084,36 @@ function App() {
     );
 
     if (matchIdx === -1) {
-      // No match — alarm
-      const newToast = {
-        id: Date.now()+Math.random(),
-        title: '🚨 Escaneo sin etiqueta',
-        body: `ID: ${scannedId} (${scanSource}) — No está en los PDFs cargados. ¿Agregar como envío manual?`,
-        alarm: true, scanRaw: raw, scanSource,
-        actions: [{ label: 'Sí, agregar', value: 'add_scan', variant: 'primary' }, { label: 'Ignorar', value: 'ignore', variant: 'ghost' }]
-      };
-      setToasts(p => [...p, newToast]);
-      playAlarm();
+      if (scanSource === 'AGENCIA') {
+        // For agency QRs the did/local don't match label IDs — show pending agency labels
+        // so the operator can manually confirm which package was just scanned
+        const agencyPending = labels.filter(l => l.source === 'AGENCIA' && !l.matched);
+        if (agencyPending.length > 0) {
+          setAgencyMatchModal({ raw, scannedId, scanSource, candidates: agencyPending });
+        } else {
+          // No agency labels loaded — treat as unknown manual
+          const newToast = {
+            id: Date.now()+Math.random(),
+            title: '📦 QR de Agencia',
+            body: `ID interno: ${scannedId} — No hay etiquetas de agencia pendientes. ¿Agregar como envío manual?`,
+            alarm: true, scanRaw: raw, scanSource,
+            actions: [{ label: 'Sí, agregar', value: 'add_scan', variant: 'primary' }, { label: 'Ignorar', value: 'ignore', variant: 'ghost' }]
+          };
+          setToasts(p => [...p, newToast]);
+          playAlarm();
+        }
+      } else {
+        // FLEX QR with no match — alarm
+        const newToast = {
+          id: Date.now()+Math.random(),
+          title: '🚨 Escaneo sin etiqueta',
+          body: `ID: ${scannedId} (${scanSource}) — No está en los PDFs cargados. ¿Agregar como envío manual?`,
+          alarm: true, scanRaw: raw, scanSource,
+          actions: [{ label: 'Sí, agregar', value: 'add_scan', variant: 'primary' }, { label: 'Ignorar', value: 'ignore', variant: 'ghost' }]
+        };
+        setToasts(p => [...p, newToast]);
+        playAlarm();
+      }
     } else {
       // Match!
       const updLabels = labels.map((l,i) => i===matchIdx ? {...l, matched:true, matchedAt: new Date().toISOString()} : l);
@@ -1130,6 +1151,21 @@ function App() {
   };
 
   // ── Close/Delete sessions from Historial tab (any date, not just today's) ──
+  // ── Confirm agency label match manually ──
+  const confirmAgencyMatch = async (label) => {
+    if (!db || !session) return;
+    const { raw, scannedId, scanSource } = agencyMatchModal;
+    const updLabels = labels.map(l => l.id === label.id ? {...l, matched:true, matchedAt: new Date().toISOString()} : l);
+    const newScan = { raw, scannedId, scanSource, ts: new Date().toISOString(), matched: true, labelId: label.id };
+    const updScans = [...scans, newScan];
+    setLabels(updLabels);
+    setScans(updScans);
+    setAgencyMatchModal(null);
+    await db.collection('sessions').doc(session.id).update({ labels: updLabels, scans: updScans });
+    addToast('✅ Paquete de agencia registrado', `${label.dest || label.loc || label.id}`);
+    scanRef.current?.focus();
+  };
+
   const closeSessionById = async (sessionId) => {
     if (!db) return;
     try {
@@ -1236,6 +1272,34 @@ function App() {
       {/* Image modal */}
       {imgModal && <LabelImageModal label={imgModal} onClose={()=>setImgModal(null)} />}
       {cameraOpen && <CameraScanner onResult={(data)=>{ handleScan(data); }} onClose={()=>setCameraOpen(false)} />}
+
+      {/* Agency manual match modal */}
+      {agencyMatchModal && (
+        <div className="overlay" onClick={()=>setAgencyMatchModal(null)}>
+          <div className="modal" style={{maxWidth:520}} onClick={e=>e.stopPropagation()}>
+            <div className="modal-title">📦 ¿Cuál es este paquete de agencia?</div>
+            <p style={{color:'var(--muted)',fontSize:13,marginBottom:16}}>
+              El QR escaneado es de una etiqueta externa (GURA/Agencia). Tocá el paquete que corresponde para registrarlo:
+            </p>
+            <div style={{display:'flex',flexDirection:'column',gap:10,maxHeight:400,overflowY:'auto'}}>
+              {agencyMatchModal.candidates.map(l => (
+                <button key={l.id} className="btn btn-ghost" style={{justifyContent:'flex-start',gap:12,padding:'12px 14px',textAlign:'left'}}
+                  onClick={()=>confirmAgencyMatch(l)}>
+                  {l.thumb && <img src={l.thumb} style={{width:60,height:80,objectFit:'cover',borderRadius:4,flexShrink:0}} />}
+                  <div>
+                    <div style={{fontWeight:700,fontSize:14}}>{l.dest||'Sin nombre'}</div>
+                    <div style={{fontSize:12,color:'var(--muted)',marginTop:2}}>{[l.partido,l.loc].filter(Boolean).join(' / ')||'—'} · CP {l.cp||'—'}</div>
+                    <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>SKU: {l.sku||'—'} · Envío: {l.id}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div style={{marginTop:16,display:'flex',justifyContent:'flex-end'}}>
+              <button className="btn btn-ghost" onClick={()=>setAgencyMatchModal(null)}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
 
       <header className="header">
