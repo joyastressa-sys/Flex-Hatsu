@@ -442,19 +442,23 @@ async function parseLabelsPDF(file) {
     const ventaId = (text.match(/Venta[:\s]+([\d\s]{10,})/i) || [])[1]?.replace(/\s/g,'') || null;
 
     // Agency / external label format (GURA-FLEX style):
-    //   Partido at start, Destinatario as name, phone, address CP:XXXX, Observación=SKU, Envio: N (short number)
-    const isAgencyLabel = !shipId && !packId && !ventaId && /\bEnvio[:\s]*\d{1,6}\b/i.test(text) && /\bRte[.:\s]/i.test(text);
-    const envioExterno = isAgencyLabel ? (text.match(/Envio[:\s]*(\d{1,10})/i) || [])[1] || null : null;
+    //   Partido at start, Destinatario as name, phone, address CP:XXXX, Observación=SKU, Envio: N (any length)
+    // Key identifiers: has "Rte.:" and short "Envio: N" (no Pack ID, no long shipment number)
+    const isAgencyLabel = !shipId && !packId && !ventaId && /\bRte[.:\s]/i.test(text) && /\bEnvio[:\s]*\d+/i.test(text);
+    const envioExterno = isAgencyLabel ? (text.match(/Envio[:\s]*(\d+)/i) || [])[1] || null : null;
 
     let sku    = (text.match(/SKU[:\s:]*([A-Z0-9\-\/]+)/i) || [])[1] || null;
     // Agency labels use "Observación:" for the product/SKU reference
-    if (!sku && isAgencyLabel) sku = (text.match(/Observaci[oó]n[:\s]+([^\n]+)/i) || [])[1]?.trim() || null;
+    if (!sku && isAgencyLabel) sku = (text.match(/Observaci[oó]n[:\s]+([^\s]{1,30})/i) || [])[1]?.trim() || null;
 
     let dest   = (text.match(/Destinatario[:\s]*([^\n(]+)/i) || [])[1]?.trim() || null;
-    // Agency: destinatario is the bold name right after partido header
+    // Agency (GURA): text structure is PARTIDO\nDESTINATARIO\nTELEFONO\n...
+    // The destinatario is the first ALL-CAPS multi-word name after the partido line
     if (!dest && isAgencyLabel) {
-      const nameMatch = text.match(/^[A-ZÁÉÍÓÚ\s]+\s+\d{1,2}\/\d{1,2}\/\d{4}\s+(.+?)\s+\d{10}/m);
-      if (nameMatch) dest = nameMatch[1].trim();
+      // Split by newlines (pdf.js joins with spaces, so we look for pattern after partido)
+      const lines = text.split(/\s{2,}/);
+      // lines[0] = partido (AVELLANEDA), lines[1] = name (BENITO CAMELAS)
+      if (lines.length >= 2) dest = lines[1]?.trim() || null;
     }
 
     const dateM  = (text.match(/(\d{1,2}\s+(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC))/i) || [])[1]
@@ -473,8 +477,8 @@ async function parseLabelsPDF(file) {
       // Agency format: partido is in the top-left header, CP in address line "Av. Mitre 1500 CP: 1870"
       const agencyCp = (text.match(/\bCP[:\s]*(\d{4,5})/i) || [])[1] || null;
       cp = agencyCp;
-      // Partido is usually the first ALL-CAPS word(s) at the start of the label text
-      const partidoMatch = text.match(/^([A-ZÁÉÍÓÚÜÑ]{3,}(?:\s+[A-ZÁÉÍÓÚÜÑ]{3,})?)\s/);
+      // Partido is the first segment before double space/newline in GURA labels
+      const partidoMatch = text.match(/^([A-ZÁÉÍÓÚÜÑ\s]{3,30?})\s{2,}/);
       partido = partidoMatch?.[1]?.trim() || null;
       loc = partido; // for agency labels, partido = locality (no sub-barrio distinction)
       tipoEnvio = null; // agency labels don't have RESIDENCIAL/COMERCIAL
