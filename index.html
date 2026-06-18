@@ -210,27 +210,76 @@ function playAlarm() {
 // Returns { byZone: [{name, cp, count, heavyCount, price, subtotal}], total, matchedCount, unmatchedCount }
 function calcSessionCost(sessionLabels, zones, heavySkus) {
   const matched = (sessionLabels || []).filter(l => l.matched);
-  const byZone = zones.map(z => {
-    // Match zone: use word-boundary-like check to avoid "CABA" matching inside other strings
-    const zn = z.name.toLowerCase().replace(/\.+/g,'').trim(); // normalize: "C.A.B.A." -> "caba"
-    const inZone = matched.filter(l => {
-      const lLoc = (l.loc||'').toLowerCase().replace(/\.+/g,'').trim();
-      // Exact match OR loc contains the zone name as a whole word
-      const locMatch = lLoc === zn || new RegExp('(^|\\s)' + zn.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '(\\s|$)').test(lLoc);
-      const cpMatch = z.cp && l.cp && l.cp === z.cp;
-      return locMatch || cpMatch;
-    });
-    const heavyInZone = inZone.filter(l => heavySkus.includes(l.sku));
-    // Heavy shipments pay for an extra trip (price counted twice: once normal, once extra)
-    const subtotal = inZone.length * z.price + heavyInZone.length * z.price;
-    return { name: z.name, cp: z.cp, count: inZone.length, heavyCount: heavyInZone.length, price: z.price, subtotal };
-  }).filter(z => z.count > 0);
+
+  // Normalize a string for fuzzy comparison: lowercase, remove dots/accents/extra spaces
+  const norm = s => (s||'').toLowerCase()
+    .replace(/\./g,'')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/\s+/g,' ').trim();
+
+  // Given a label, find the SINGLE best matching zone.
+  // Priority: 1) exact CP match, 2) normalized text contains zone name as whole word, 3) null
+  const findZone = (label) => {
+    const lcp = (label.cp||'').trim();
+    const lLoc = norm(label.loc);
+
+    // 1) CP exact match
+    if (lcp) {
+      const byCP = zones.filter(z => z.cp && z.cp.trim() === lcp);
+      if (byCP.length === 1) return byCP[0];
+      // Multiple zones with same CP → narrow down by loc text
+      if (byCP.length > 1) {
+        const locMatch = byCP.find(z => {
+          const zn = norm(z.name);
+          return lLoc === zn || new RegExp('(^|\\s)' + zn.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '(\\s|$)').test(lLoc);
+        });
+        if (locMatch) return locMatch;
+        return byCP[0]; // still prefer CP match even without loc refinement
+      }
+    }
+
+    // 2) Text match: zone name is fully contained in label's loc (word boundary)
+    // Sort by name length descending so more specific zones win (e.g. "EL TALAR PACHECO" beats "PACHECO")
+    const textCandidates = [...zones]
+      .sort((a,b) => b.name.length - a.name.length)
+      .filter(z => {
+        const zn = norm(z.name);
+        return lLoc === zn || new RegExp('(^|\\s)' + zn.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '(\\s|$)').test(lLoc);
+      });
+    if (textCandidates.length > 0) return textCandidates[0];
+
+    return null; // no zone found
+  };
+
+  // Assign each matched label to exactly one zone
+  const zoneMap = {}; // zoneName -> { zone, labels[] }
+  const unzoned = [];
+
+  matched.forEach(l => {
+    const z = findZone(l);
+    if (z) {
+      if (!zoneMap[z.name]) zoneMap[z.name] = { zone: z, labels: [] };
+      zoneMap[z.name].labels.push(l);
+    } else {
+      unzoned.push(l);
+    }
+  });
+
+  const byZone = Object.values(zoneMap).map(({ zone, labels }) => {
+    const heavyCount = labels.filter(l => heavySkus.includes(l.sku)).length;
+    const subtotal = labels.length * zone.price + heavyCount * zone.price;
+    return { name: zone.name, cp: zone.cp, count: labels.length, heavyCount, price: zone.price, subtotal };
+  }).sort((a,b) => b.subtotal - a.subtotal);
+
   const total = byZone.reduce((sum, z) => sum + z.subtotal, 0);
+
   return {
     byZone,
     total,
     matchedCount: matched.length,
-    unmatchedCount: (sessionLabels || []).filter(l => !l.matched).length
+    unmatchedCount: (sessionLabels || []).filter(l => !l.matched).length,
+    unzonedCount: unzoned.length,
+    unzoned,
   };
 }
 
@@ -1337,7 +1386,7 @@ function App() {
                     <div className="card-title">Estimación de costo ({session.date})</div>
                     {(() => {
                       const cost = calcSessionCost(labels, zones, heavySkus);
-                      if (cost.byZone.length === 0) {
+                      if (cost.byZone.length === 0 && cost.unzonedCount === 0) {
                         return <p style={{color:'var(--muted)',fontSize:13}}>Todavía no hay paquetes escaneados que coincidan con una zona configurada.</p>;
                       }
                       return (
@@ -1354,8 +1403,16 @@ function App() {
                                   <td style={{fontWeight:700}}>${z.subtotal.toLocaleString('es-AR')}</td>
                                 </tr>
                               ))}
+                              {cost.unzonedCount > 0 && (
+                                <tr>
+                                  <td style={{color:'var(--accent)'}} colSpan={4}>⚠️ Sin zona asignada — {cost.unzonedCount} paquete(s) ({cost.unzoned.map(l=>l.loc||l.cp||l.id).join(', ')})</td>
+                                  <td style={{color:'var(--muted)'}}>—</td>
+                                </tr>
+                              )}
                               <tr>
-                                <td colSpan={4} style={{fontWeight:700,textAlign:'right'}}>Total del día</td>
+                                <td colSpan={4} style={{fontWeight:700,textAlign:'right'}}>
+                                  Total del día ({cost.matchedCount} entregados, {cost.unzonedCount > 0 ? `${cost.matchedCount - cost.unzonedCount} con zona` : 'todos con zona'})
+                                </td>
                                 <td style={{fontWeight:800,color:'var(--accent)'}}>${cost.total.toLocaleString('es-AR')}</td>
                               </tr>
                             </tbody>
