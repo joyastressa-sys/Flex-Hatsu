@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>FLEX Tracker â€” Control de Entregas</title>
+<title>FLEX Tracker — Control de Entregas</title>
 
 <!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -170,7 +170,7 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
 
-// â”€â”€â”€ FIREBASE CONFIG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── FIREBASE CONFIG ──────────────────────────────────────────────────────────
 const FIREBASE_CONFIG_KEY = 'flex_tracker_firebase_config';
 
 const HARDCODED_CONFIG = {
@@ -187,7 +187,7 @@ function getStoredConfig() {
   return HARDCODED_CONFIG;
 }
 
-// â”€â”€â”€ AUDIO ALARM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── AUDIO ALARM ─────────────────────────────────────────────────────────────
 function playAlarm() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -206,7 +206,7 @@ function playAlarm() {
   } catch(e) {}
 }
 
-// â”€â”€â”€ COST CALCULATION (shared between Resumen, Historial, and date-range billing) â”€â”€
+// ─── COST CALCULATION (shared between Resumen, Historial, and date-range billing) ──
 // Returns { byZone: [{name, cp, count, heavyCount, price, subtotal}], total, matchedCount, unmatchedCount }
 function calcSessionCost(sessionLabels, zones, heavySkus) {
   const matched = (sessionLabels || []).filter(l => l.matched);
@@ -226,7 +226,7 @@ function calcSessionCost(sessionLabels, zones, heavySkus) {
   };
 }
 
-// â”€â”€â”€ PDF PARSER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── PDF PARSER ──────────────────────────────────────────────────────────────
 const pdfBufferCache = {}; // fileName -> ArrayBuffer (in-memory, this browser session only)
 
 async function parseLabelsPDF(file) {
@@ -252,9 +252,9 @@ async function parseLabelsPDF(file) {
     const sku    = (text.match(/SKU[:\s:]*([A-Z0-9\-]+)/i) || [])[1] || null;
     const cp     = (text.match(/CP[:\s]*(\d{4,5})/i) || [])[1] || null;
     const dest   = (text.match(/Destinatario[:\s]*([^\n(]+)/i) || [])[1]?.trim() || null;
-    const loc    = (text.match(/\b(TIGRE|PILAR|ESCOBAR|GARÃN|DERQUI|DON TORCUATO|MALVINAS ARGENTINAS|GRAND BOURG|LOS POLVORINES|VILLA ROSA|ZÃRATE|CAMPANA|SAN ISIDRO|VICENTE LÃ“PEZ|OLIVOS|MUNRO|FLORIDA|MARTÃNEZ|SAN FERNANDO|PACHECO|PALERMO|BELGRANO|CABALLITO|FLORES|VILLA CRESPO|ALMAGRO|BOEDO|NÃšÃ‘EZ|SAAVEDRA|VILLA URQUIZA|DEVOTO|MONTE GRANDE|AVELLANEDA|QUILMES|BERAZATEGUI|FLORENCIO VARELA|LANÃšS|LOMAS DE ZAMORA|BANFIELD|TEMPERLEY|ADROGUÃ‰|BURZACO|GLEW|CAÃ‘UELAS|MORÃ“N|HAEDO|RAMOS MEJÃA|SAN JUSTO|MERLO|MORENO|ITUZAINGÃ“|CASTELAR|PALERMO|RECOLETA|SAN TELMO|MICROCENTRO|[A-Z\s]{5,})\b/i) || [])[1]?.trim() || null;
+    const loc    = (text.match(/\b(TIGRE|PILAR|ESCOBAR|GARÍN|DERQUI|DON TORCUATO|MALVINAS ARGENTINAS|GRAND BOURG|LOS POLVORINES|VILLA ROSA|ZÁRATE|CAMPANA|SAN ISIDRO|VICENTE LÓPEZ|OLIVOS|MUNRO|FLORIDA|MARTÍNEZ|SAN FERNANDO|PACHECO|PALERMO|BELGRANO|CABALLITO|FLORES|VILLA CRESPO|ALMAGRO|BOEDO|NÚÑEZ|SAAVEDRA|VILLA URQUIZA|DEVOTO|MONTE GRANDE|AVELLANEDA|QUILMES|BERAZATEGUI|FLORENCIO VARELA|LANÚS|LOMAS DE ZAMORA|BANFIELD|TEMPERLEY|ADROGUÉ|BURZACO|GLEW|CAÑUELAS|MORÓN|HAEDO|RAMOS MEJÍA|SAN JUSTO|MERLO|MORENO|ITUZAINGÓ|CASTELAR|PALERMO|RECOLETA|SAN TELMO|MICROCENTRO|[A-Z\s]{5,})\b/i) || [])[1]?.trim() || null;
     const dateM  = (text.match(/(\d{1,2}\s+(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC))/i) || [])[1] || null;
-    const seller = (text.match(/^([A-ZÃÃ‰ÃÃ“Ãš\s]+)\s+#\d/m) || [])[1]?.trim() || null;
+    const seller = (text.match(/^([A-ZÁÉÍÓÚ\s]+)\s+#\d/m) || [])[1]?.trim() || null;
 
     // Render SMALL thumbnail only (lightweight, for the list view + Firestore storage)
     const viewport = page.getViewport({ scale: 0.5 });
@@ -270,13 +270,13 @@ async function parseLabelsPDF(file) {
   return labels;
 }
 
-// â”€â”€â”€ HIGH-RES PAGE RENDER (on-demand, from in-memory PDF buffer â€” no upload/cloud needed) â”€â”€
+// ─── HIGH-RES PAGE RENDER (on-demand, from in-memory PDF buffer — no upload/cloud needed) ──
 async function renderHighResPage(cacheKey, pageNum) {
   const pdfjsLib = window['pdfjs-dist/build/pdf'];
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
   const buf = pdfBufferCache[cacheKey];
-  if (!buf) throw new Error('PDF no disponible en memoria â€” recargÃ¡ el PDF para ver en alta resoluciÃ³n');
+  if (!buf) throw new Error('PDF no disponible en memoria — recargá el PDF para ver en alta resolución');
 
   const pdf = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
   const page = await pdf.getPage(pageNum);
@@ -287,13 +287,13 @@ async function renderHighResPage(cacheKey, pageNum) {
   return canvas.toDataURL('image/jpeg', 0.92);
 }
 
-// â”€â”€â”€ TOAST COMPONENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── TOAST COMPONENT ─────────────────────────────────────────────────────────
 function ToastContainer({ toasts, onAction, onDismiss }) {
   return (
     <div className="toast-container">
       {toasts.map(t => (
         <div key={t.id} className={`toast ${t.alarm ? 'alarm' : ''}`}>
-          <div className="toast-title">{t.alarm ? 'ðŸš¨ ' : ''}{t.title}</div>
+          <div className="toast-title">{t.alarm ? '🚨 ' : ''}{t.title}</div>
           <div className="toast-body">{t.body}</div>
           {t.actions && (
             <div className="toast-actions">
@@ -303,7 +303,7 @@ function ToastContainer({ toasts, onAction, onDismiss }) {
                   {a.label}
                 </button>
               ))}
-              <button className="btn btn-ghost" style={{fontSize:12,padding:'6px 12px'}} onClick={() => onDismiss(t.id)}>âœ•</button>
+              <button className="btn btn-ghost" style={{fontSize:12,padding:'6px 12px'}} onClick={() => onDismiss(t.id)}>✕</button>
             </div>
           )}
           {!t.actions && (
@@ -315,7 +315,7 @@ function ToastContainer({ toasts, onAction, onDismiss }) {
   );
 }
 
-// â”€â”€â”€ FIREBASE SETUP SCREEN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── FIREBASE SETUP SCREEN ────────────────────────────────────────────────────
 function SetupScreen({ onSave }) {
   const [cfg, setCfg] = useState({ apiKey:'', authDomain:'', projectId:'', storageBucket:'', messagingSenderId:'', appId:'' });
   const [err, setErr] = useState('');
@@ -336,10 +336,10 @@ function SetupScreen({ onSave }) {
       <div className="setup-card">
         <div className="setup-logo">
           <span className="logo-badge">FLEX</span>
-          <span style={{fontSize:18,fontWeight:700}}>Tracker â€” ConfiguraciÃ³n inicial</span>
+          <span style={{fontSize:18,fontWeight:700}}>Tracker — Configuración inicial</span>
         </div>
         <p style={{color:'var(--muted)',fontSize:13,marginBottom:24,lineHeight:1.6}}>
-          PegÃ¡ los datos de tu proyecto Firebase (Consola Firebase â†’ ConfiguraciÃ³n del proyecto â†’ Tus apps â†’ SDK). Solo se guarda en este dispositivo.
+          Pegá los datos de tu proyecto Firebase (Consola Firebase → Configuración del proyecto → Tus apps → SDK). Solo se guarda en este dispositivo.
         </p>
         {fields.map(([k,label]) => (
           <div key={k} style={{marginBottom:12}}>
@@ -349,17 +349,17 @@ function SetupScreen({ onSave }) {
         ))}
         {err && <p style={{color:'var(--red)',fontSize:13,marginBottom:12}}>{err}</p>}
         <button className="btn btn-primary" style={{width:'100%',justifyContent:'center',marginTop:8}} onClick={save}>
-          Conectar Firebase â†’
+          Conectar Firebase →
         </button>
         <p style={{color:'var(--muted)',fontSize:11,marginTop:14,textAlign:'center'}}>
-          Esta configuraciÃ³n solo se guarda localmente en este navegador
+          Esta configuración solo se guarda localmente en este navegador
         </p>
       </div>
     </div>
   );
 }
 
-// â”€â”€â”€ LABEL IMAGE MODAL (HD render from in-memory PDF, or saved hdThumb fallback) â”€â”€
+// ─── LABEL IMAGE MODAL (HD render from in-memory PDF, or saved hdThumb fallback) ──
 function LabelImageModal({ label, onClose }) {
   const [hdSrc, setHdSrc] = useState(label.hdThumb || null);
   const [loadingHd, setLoadingHd] = useState(false);
@@ -380,16 +380,16 @@ function LabelImageModal({ label, onClose }) {
   }, [label.pdfCacheKey, label.page, label.hdThumb]);
 
   const displaySrc = hdSrc || label.thumb;
-  const statusMsg = label.hdThumb ? 'âœ“ Alta resoluciÃ³n (guardada)'
-    : loadingHd ? 'â³ Generando alta resoluciÃ³n desde el PDF...'
-    : hdSrc ? 'âœ“ Alta resoluciÃ³n'
-    : hdError ? 'âš ï¸ El PDF original ya no estÃ¡ en memoria â€” recargalo para ver en HD'
+  const statusMsg = label.hdThumb ? '✓ Alta resolución (guardada)'
+    : loadingHd ? '⏳ Generando alta resolución desde el PDF...'
+    : hdSrc ? '✓ Alta resolución'
+    : hdError ? '⚠️ El PDF original ya no está en memoria — recargalo para ver en HD'
     : '';
 
   return (
     <div className="overlay" onClick={onClose} style={{padding:16,paddingTop:60,alignItems:'flex-start'}}>
       <div style={{position:'relative',width:'min(94vw, 480px)',maxHeight:'88vh',display:'flex',flexDirection:'column',alignItems:'center',margin:'0 auto'}} onClick={e=>e.stopPropagation()}>
-        <button className="btn btn-ghost" onClick={onClose} style={{position:'absolute',top:-44,right:0}}>âœ• Cerrar</button>
+        <button className="btn btn-ghost" onClick={onClose} style={{position:'absolute',top:-44,right:0}}>✕ Cerrar</button>
         {statusMsg && (
           <div style={{position:'absolute',top:-44,left:0,fontSize:12,color:'var(--muted)',lineHeight:'36px',maxWidth:'60%'}}>{statusMsg}</div>
         )}
@@ -398,7 +398,7 @@ function LabelImageModal({ label, onClose }) {
         </div>
         {label.id && (
           <div style={{marginTop:12,background:'var(--surface)',border:'1px solid var(--border)',borderRadius:8,padding:'10px 16px',fontSize:13,color:'var(--muted)',textAlign:'center',maxWidth:'96vw'}}>
-            <strong style={{color:'var(--text)'}}>{label.id}</strong> Â· {label.dest||'â€”'} Â· {label.loc||'â€”'} Â· CP {label.cp||'â€”'}
+            <strong style={{color:'var(--text)'}}>{label.id}</strong> · {label.dest||'—'} · {label.loc||'—'} · CP {label.cp||'—'}
           </div>
         )}
       </div>
@@ -406,14 +406,14 @@ function LabelImageModal({ label, onClose }) {
   );
 }
 
-// â”€â”€â”€ CAMERA QR SCANNER (for mobile, no gun scanner available) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── CAMERA QR SCANNER (for mobile, no gun scanner available) ────────────────
 function CameraScanner({ onResult, onClose }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const rafRef = useRef(null);
   const [error, setError] = useState(null);
-  const [status, setStatus] = useState('Iniciando cÃ¡mara...');
+  const [status, setStatus] = useState('Iniciando cámara...');
   const lastResultRef = useRef({ text: null, ts: 0 });
 
   useEffect(() => {
@@ -430,12 +430,12 @@ function CameraScanner({ onResult, onClose }) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play();
         }
-        setStatus('ApuntÃ¡ al cÃ³digo QR');
+        setStatus('Apuntá al código QR');
         tick();
       } catch (err) {
         setError(err.name === 'NotAllowedError'
-          ? 'Permiso de cÃ¡mara denegado. Habilitalo en la configuraciÃ³n del navegador.'
-          : 'No se pudo acceder a la cÃ¡mara: ' + err.message);
+          ? 'Permiso de cámara denegado. Habilitalo en la configuración del navegador.'
+          : 'No se pudo acceder a la cámara: ' + err.message);
       }
     }
 
@@ -475,7 +475,7 @@ function CameraScanner({ onResult, onClose }) {
       <div style={{position:'relative',width:'min(94vw, 480px)',display:'flex',flexDirection:'column',alignItems:'center'}} onClick={e=>e.stopPropagation()}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',width:'100%',marginBottom:8}}>
           <span style={{fontSize:13,color:error?'var(--red)':'var(--muted)'}}>{error || status}</span>
-          <button className="btn btn-ghost" onClick={onClose}>âœ• Cerrar</button>
+          <button className="btn btn-ghost" onClick={onClose}>✕ Cerrar</button>
         </div>
         <div style={{width:'100%',aspectRatio:'1',borderRadius:8,overflow:'hidden',border:'2px solid var(--border)',position:'relative',background:'#000'}}>
           <video ref={videoRef} playsInline muted style={{width:'100%',height:'100%',objectFit:'cover'}} />
@@ -483,14 +483,14 @@ function CameraScanner({ onResult, onClose }) {
         </div>
         <canvas ref={canvasRef} style={{display:'none'}} />
         <p style={{color:'var(--muted)',fontSize:12,marginTop:10,textAlign:'center'}}>
-          La cÃ¡mara queda abierta â€” escaneÃ¡ un paquete tras otro sin cerrar este modal
+          La cámara queda abierta — escaneá un paquete tras otro sin cerrar este modal
         </p>
       </div>
     </div>
   );
 }
 
-// â”€â”€â”€ BILLING RANGE PANEL (date-range cost summary, for paying the courier) â”€â”€â”€
+// ─── BILLING RANGE PANEL (date-range cost summary, for paying the courier) ───
 function BillingRangePanel({ sessions, zones, heavySkus }) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -526,7 +526,7 @@ function BillingRangePanel({ sessions, zones, heavySkus }) {
 
   return (
     <div className="card">
-      <div className="card-title">ðŸ’° LiquidaciÃ³n por perÃ­odo</div>
+      <div className="card-title">💰 Liquidación por período</div>
       <div style={{display:'flex',flexWrap:'wrap',gap:10,alignItems:'flex-end',marginBottom:16}}>
         <div>
           <label style={{fontSize:12,color:'var(--muted)',display:'block',marginBottom:4}}>Desde</label>
@@ -536,20 +536,20 @@ function BillingRangePanel({ sessions, zones, heavySkus }) {
           <label style={{fontSize:12,color:'var(--muted)',display:'block',marginBottom:4}}>Hasta</label>
           <input type="date" className="input" value={to} onChange={e=>setTo(e.target.value)} />
         </div>
-        <button className="btn btn-ghost" onClick={()=>setQuickRange(7)}>Ãšltimos 7 dÃ­as</button>
-        <button className="btn btn-ghost" onClick={()=>setQuickRange(15)}>Ãšltimos 15 dÃ­as</button>
-        <button className="btn btn-ghost" onClick={()=>setQuickRange(30)}>Ãšltimos 30 dÃ­as</button>
-        {(from || to) && <button className="btn btn-ghost" onClick={()=>{setFrom('');setTo('');}}>âœ• Limpiar</button>}
+        <button className="btn btn-ghost" onClick={()=>setQuickRange(7)}>Últimos 7 días</button>
+        <button className="btn btn-ghost" onClick={()=>setQuickRange(15)}>Últimos 15 días</button>
+        <button className="btn btn-ghost" onClick={()=>setQuickRange(30)}>Últimos 30 días</button>
+        {(from || to) && <button className="btn btn-ghost" onClick={()=>{setFrom('');setTo('');}}>✕ Limpiar</button>}
       </div>
 
       {!from && !to ? (
-        <p style={{color:'var(--muted)',fontSize:13}}>ElegÃ­ un rango de fechas para calcular el total a liquidar.</p>
+        <p style={{color:'var(--muted)',fontSize:13}}>Elegí un rango de fechas para calcular el total a liquidar.</p>
       ) : inRange.length === 0 ? (
         <p style={{color:'var(--muted)',fontSize:13}}>No hay sesiones guardadas en ese rango.</p>
       ) : (
         <>
           <div className="stats" style={{marginBottom:16}}>
-            <div className="stat"><div className="stat-val">{inRange.length}</div><div className="stat-label">Sesiones en el perÃ­odo</div></div>
+            <div className="stat"><div className="stat-val">{inRange.length}</div><div className="stat-label">Sesiones en el período</div></div>
             <div className="stat"><div className="stat-val" style={{color:'var(--green)'}}>{perSession.reduce((s,x)=>s+x.cost.matchedCount,0)}</div><div className="stat-label">Total entregados</div></div>
             <div className="stat"><div className="stat-val" style={{color:'var(--accent)'}}>${grandTotal.toLocaleString('es-AR')}</div><div className="stat-label">Total a liquidar</div></div>
           </div>
@@ -563,13 +563,13 @@ function BillingRangePanel({ sessions, zones, heavySkus }) {
                     <tr key={z.name}>
                       <td>{z.name}</td>
                       <td>{z.count}</td>
-                      <td>{z.heavyCount > 0 ? <span className="badge badge-yellow">âš–ï¸ {z.heavyCount}</span> : 'â€”'}</td>
+                      <td>{z.heavyCount > 0 ? <span className="badge badge-yellow">⚖️ {z.heavyCount}</span> : '—'}</td>
                       <td>${z.price.toLocaleString('es-AR')}</td>
                       <td style={{fontWeight:700}}>${z.subtotal.toLocaleString('es-AR')}</td>
                     </tr>
                   ))}
                   <tr>
-                    <td colSpan={4} style={{fontWeight:700,textAlign:'right'}}>Total del perÃ­odo</td>
+                    <td colSpan={4} style={{fontWeight:700,textAlign:'right'}}>Total del período</td>
                     <td style={{fontWeight:800,color:'var(--accent)'}}>${grandTotal.toLocaleString('es-AR')}</td>
                   </tr>
                 </tbody>
@@ -578,10 +578,10 @@ function BillingRangePanel({ sessions, zones, heavySkus }) {
           )}
 
           <details>
-            <summary style={{cursor:'pointer',color:'var(--muted)',fontSize:13,marginBottom:8}}>Ver desglose por dÃ­a</summary>
+            <summary style={{cursor:'pointer',color:'var(--muted)',fontSize:13,marginBottom:8}}>Ver desglose por día</summary>
             <div style={{overflowX:'auto',marginTop:8}}>
               <table className="tbl">
-                <thead><tr><th>Fecha</th><th>Entregados</th><th>Costo del dÃ­a</th></tr></thead>
+                <thead><tr><th>Fecha</th><th>Entregados</th><th>Costo del día</th></tr></thead>
                 <tbody>
                   {perSession.map(s => (
                     <tr key={s.date}>
@@ -600,7 +600,7 @@ function BillingRangePanel({ sessions, zones, heavySkus }) {
   );
 }
 
-// â”€â”€â”€ MAIN APP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
 function App() {
   const [firebaseCfg, setFirebaseCfg] = useState(getStoredConfig);
   const [db, setDb] = useState(null);
@@ -623,7 +623,7 @@ function App() {
   const [sessions, setSessions] = useState([]);        // past sessions
   const scanRef = useRef(null);
 
-  // â”€â”€ Init Firebase â”€â”€
+  // ── Init Firebase ──
   useEffect(() => {
     if (!firebaseCfg) return;
     try {
@@ -632,10 +632,10 @@ function App() {
       else app = window.firebase.initializeApp(firebaseCfg);
       setDb(window.firebase.firestore(app));
       setStorage(window.firebase.storage(app));
-    } catch(e) { addToast('Error Firebase','VerificÃ¡ la configuraciÃ³n','error'); }
+    } catch(e) { addToast('Error Firebase','Verificá la configuración','error'); }
   }, [firebaseCfg]);
 
-  // â”€â”€ Load data from Firestore â”€â”€
+  // ── Load data from Firestore ──
   useEffect(() => {
     if (!db) return;
     // today's session
@@ -658,7 +658,7 @@ function App() {
     });
   }, [db]);
 
-  // â”€â”€ Check yesterday's unmatched on load â”€â”€
+  // ── Check yesterday's unmatched on load ──
   useEffect(() => {
     if (!db || !session) return;
     const yesterday = new Date(); yesterday.setDate(yesterday.getDate()-1);
@@ -673,7 +673,7 @@ function App() {
     });
   }, [db, session?.id]);
 
-  // â”€â”€ Toast helpers â”€â”€
+  // ── Toast helpers ──
   const addToast = useCallback((title, body, type='info', actions=null) => {
     const id = Date.now() + Math.random();
     setToasts(p => [...p, { id, title, body, alarm: type==='alarm', actions }]);
@@ -695,7 +695,7 @@ function App() {
 
   const dismissToast = id => setToasts(p => p.filter(t=>t.id!==id));
 
-  // â”€â”€ Open Session â”€â”€
+  // ── Open Session ──
   const openSession = async () => {
     if (!db) return;
     const today = new Date().toISOString().slice(0,10);
@@ -713,7 +713,7 @@ function App() {
     setLoading(false);
   };
 
-  // â”€â”€ Close Session â”€â”€
+  // ── Close Session ──
   const closeSession = async () => {
     if (!db || !session) return;
     setLoading(true);
@@ -736,16 +736,16 @@ function App() {
       setSession(p => ({...p, open: false}));
       const m = updatedLabels.filter(l=>l.matched).length;
       const u = updatedLabels.filter(l=>!l.matched).length;
-      addToast('SesiÃ³n cerrada', `${m} entregados Â· ${u} no entregados`);
+      addToast('Sesión cerrada', `${m} entregados · ${u} no entregados`);
       setSessions(p => p.map(s => s.id===session.id ? {...s,open:false,labels:toPersist} : s));
     } catch(err) {
-      addToast('Error al cerrar sesiÃ³n', err.message || 'IntentÃ¡ de nuevo', 'alarm');
+      addToast('Error al cerrar sesión', err.message || 'Intentá de nuevo', 'alarm');
     } finally {
       setLoading(false);
     }
   };
 
-  // â”€â”€ Upload PDFs â”€â”€
+  // ── Upload PDFs ──
   const handlePDFDrop = async (e) => {
     e.preventDefault();
     const files = Array.from(e.dataTransfer?.files || e.target.files).filter(f=>f.type==='application/pdf');
@@ -783,38 +783,38 @@ function App() {
       const heavyInBatch = allLabels.filter(l => heavySkus.includes(l.sku));
       if (heavyInBatch.length > 0) {
         const locs = [...new Set(heavyInBatch.map(l=>l.loc||l.cp||'?'))].join(', ');
-        addToast(`âš–ï¸ ${heavyInBatch.length} envÃ­o(s) PESADO(S)`, `Localidades: ${locs} â€” Pagan doble viaje`, 'alarm');
+        addToast(`⚖️ ${heavyInBatch.length} envío(s) PESADO(S)`, `Localidades: ${locs} — Pagan doble viaje`, 'alarm');
       }
       if (newlyMatchedCount > 0) {
-        addToast('Escaneos restaurados', `${newlyMatchedCount} etiqueta(s) recuperaron su estado "Escaneado" segÃºn escaneos previos de esta sesiÃ³n`);
+        addToast('Escaneos restaurados', `${newlyMatchedCount} etiqueta(s) recuperaron su estado "Escaneado" según escaneos previos de esta sesión`);
       }
       setLabels(allLabels);
-      // pdfCacheKey points to in-memory data only â€” strip it before persisting to Firestore
+      // pdfCacheKey points to in-memory data only — strip it before persisting to Firestore
       const toPersist = allLabels.map(({pdfCacheKey, ...rest}) => rest);
       await db.collection('sessions').doc(session.id).update({ labels: toPersist });
-      addToast('PDF cargado', `${allLabels.length} etiquetas en sesiÃ³n`);
+      addToast('PDF cargado', `${allLabels.length} etiquetas en sesión`);
     } catch(err) {
-      addToast('Error procesando PDF', err.message || 'OcurriÃ³ un error inesperado', 'alarm');
+      addToast('Error procesando PDF', err.message || 'Ocurrió un error inesperado', 'alarm');
     } finally {
       setLoading(false);
     }
   };
 
-  // â”€â”€ Scan QR â”€â”€
+  // ── Scan QR ──
   const handleScan = async (raw) => {
     if (!raw.trim() || !session?.open) return;
     setScanInput('');
 
     // Parse scanned data
-    const idMatch = raw.match(/id[Ã‘\[]+(\d+)/i);
+    const idMatch = raw.match(/id[Ñ\[]+(\d+)/i);
     const scannedId = idMatch?.[1] || raw.trim();
 
     // Try to match
     const matchIdx = labels.findIndex(l => l.id === scannedId || l.shipId === scannedId || l.packId === scannedId);
 
     if (matchIdx === -1) {
-      // No match â€” alarm
-      const newToast = { id: Date.now()+Math.random(), title: 'ðŸš¨ Escaneo sin etiqueta', body: `ID: ${scannedId} â€” No estÃ¡ en los PDFs cargados. Â¿Agregar como envÃ­o manual?`, alarm: true, scanRaw: raw, actions: [{ label: 'SÃ­, agregar', value: 'add_scan', variant: 'primary' }, { label: 'Ignorar', value: 'ignore', variant: 'ghost' }] };
+      // No match — alarm
+      const newToast = { id: Date.now()+Math.random(), title: '🚨 Escaneo sin etiqueta', body: `ID: ${scannedId} — No está en los PDFs cargados. ¿Agregar como envío manual?`, alarm: true, scanRaw: raw, actions: [{ label: 'Sí, agregar', value: 'add_scan', variant: 'primary' }, { label: 'Ignorar', value: 'ignore', variant: 'ghost' }] };
       setToasts(p => [...p, newToast]);
       playAlarm();
     } else {
@@ -825,17 +825,17 @@ function App() {
       setLabels(updLabels);
       setScans(updScans);
       await db.collection('sessions').doc(session.id).update({ labels: updLabels, scans: updScans });
-      addToast('âœ… Paquete registrado', `EnvÃ­o ${scannedId} â€” ${labels[matchIdx].dest || labels[matchIdx].loc || ''}`);
+      addToast('✅ Paquete registrado', `Envío ${scannedId} — ${labels[matchIdx].dest || labels[matchIdx].loc || ''}`);
     }
     scanRef.current?.focus();
   };
 
-  // â”€â”€ Computed â”€â”€
+  // ── Computed ──
   const matched   = labels.filter(l => l.matched);
   const unmatched = labels.filter(l => !l.matched);
   const manualScans = scans.filter(s => s.manual);
 
-  // â”€â”€ Delete label(s) â”€â”€
+  // ── Delete label(s) ──
   const deleteLabel = async (id) => {
     if (!db || !session) return;
     const updated = labels.filter(l => l.id !== id);
@@ -853,16 +853,16 @@ function App() {
     addToast('Etiquetas eliminadas', `${ids.length} etiqueta(s) borradas`);
   };
 
-  // â”€â”€ Close/Delete sessions from Historial tab (any date, not just today's) â”€â”€
+  // ── Close/Delete sessions from Historial tab (any date, not just today's) ──
   const closeSessionById = async (sessionId) => {
     if (!db) return;
     try {
       await db.collection('sessions').doc(sessionId).update({ open: false, closedAt: new Date().toISOString() });
       setSessions(p => p.map(s => s.id===sessionId ? {...s, open:false} : s));
       if (session?.id === sessionId) setSession(p => ({...p, open:false}));
-      addToast('SesiÃ³n cerrada', 'Se actualizÃ³ el estado en el historial');
+      addToast('Sesión cerrada', 'Se actualizó el estado en el historial');
     } catch(err) {
-      addToast('Error', err.message || 'No se pudo cerrar la sesiÃ³n', 'alarm');
+      addToast('Error', err.message || 'No se pudo cerrar la sesión', 'alarm');
     }
   };
 
@@ -872,13 +872,13 @@ function App() {
       await db.collection('sessions').doc(sessionId).delete();
       setSessions(p => p.filter(s => s.id !== sessionId));
       if (session?.id === sessionId) { setSession(null); setLabels([]); setScans([]); }
-      addToast('SesiÃ³n eliminada', dateLabel || '');
+      addToast('Sesión eliminada', dateLabel || '');
     } catch(err) {
-      addToast('Error', err.message || 'No se pudo eliminar la sesiÃ³n', 'alarm');
+      addToast('Error', err.message || 'No se pudo eliminar la sesión', 'alarm');
     }
   };
 
-  // â”€â”€ Pending Modal â”€â”€
+  // ── Pending Modal ──
   const handlePending = async (action) => {
     if (!db || !pendingModal) return;
     const updates = pendingModal.items.map(l => ({...l, discarded: action==='discard'}));
@@ -898,16 +898,16 @@ function App() {
     setPendingModal(null);
   };
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ RENDER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────── RENDER ───────────────────────────────────────
 
   // config hardcoded, no setup needed
 
   const tabs = [
-    {id:'sesion', label:'ðŸ“¦ SesiÃ³n'},
-    {id:'escanear', label:'ðŸ“· Escanear'},
-    {id:'resumen', label:'ðŸ“Š Resumen'},
-    {id:'historial', label:'ðŸ—“ Historial'},
-    {id:'config', label:'âš™ï¸ Config'},
+    {id:'sesion', label:'📦 Sesión'},
+    {id:'escanear', label:'📷 Escanear'},
+    {id:'resumen', label:'📊 Resumen'},
+    {id:'historial', label:'🗓 Historial'},
+    {id:'config', label:'⚙️ Config'},
   ];
 
   return (
@@ -918,9 +918,9 @@ function App() {
       {pendingModal && (
         <div className="overlay">
           <div className="modal">
-            <div className="modal-title">ðŸ“‹ Etiquetas pendientes de ayer ({pendingModal.date})</div>
+            <div className="modal-title">📋 Etiquetas pendientes de ayer ({pendingModal.date})</div>
             <p style={{color:'var(--muted)',fontSize:13,marginBottom:16}}>
-              {pendingModal.items.length} etiqueta(s) del dÃ­a anterior no tuvieron escaneo. Â¿QuÃ© hacemos?
+              {pendingModal.items.length} etiqueta(s) del día anterior no tuvieron escaneo. ¿Qué hacemos?
             </p>
             <div style={{maxHeight:200,overflowY:'auto',marginBottom:16}}>
               {pendingModal.items.map(l => (
@@ -928,17 +928,17 @@ function App() {
                   {l.thumb && <img src={l.thumb} className="label-thumb" onClick={()=>setImgModal(l)} />}
                   <div>
                     <div style={{fontSize:13,fontWeight:600}}>{l.id}</div>
-                    <div style={{fontSize:12,color:'var(--muted)'}}>{l.dest} Â· {l.loc}</div>
+                    <div style={{fontSize:12,color:'var(--muted)'}}>{l.dest} · {l.loc}</div>
                   </div>
                 </div>
               ))}
             </div>
             <div style={{display:'flex',gap:10}}>
               <button className="btn btn-primary" onClick={()=>handlePending('keep')}>
-                ðŸ“¥ Mantener para hoy
+                📥 Mantener para hoy
               </button>
               <button className="btn btn-danger" onClick={()=>handlePending('discard')}>
-                ðŸ—‘ Descartar
+                🗑 Descartar
               </button>
             </div>
           </div>
@@ -958,7 +958,7 @@ function App() {
         <div className="header-right">
           {session && (
             <span className={`badge ${session.open ? 'badge-green' : 'badge-red'}`}>
-              {session.open ? 'â— SesiÃ³n abierta' : 'â—‹ SesiÃ³n cerrada'} {session.date}
+              {session.open ? '● Sesión abierta' : '○ Sesión cerrada'} {session.date}
             </span>
           )}
 
@@ -971,17 +971,17 @@ function App() {
 
       <main className="main">
 
-        {/* â”€â”€ SESIÃ“N TAB â”€â”€ */}
+        {/* ── SESIÓN TAB ── */}
         {tab==='sesion' && (
           <>
-            <div className="section-title">SesiÃ³n del dÃ­a</div>
+            <div className="section-title">Sesión del día</div>
 
             {!session ? (
               <div className="card" style={{textAlign:'center',padding:40}}>
-                <div style={{fontSize:40,marginBottom:12}}>ðŸ“¦</div>
-                <p style={{color:'var(--muted)',marginBottom:20}}>No hay sesiÃ³n abierta para hoy</p>
+                <div style={{fontSize:40,marginBottom:12}}>📦</div>
+                <p style={{color:'var(--muted)',marginBottom:20}}>No hay sesión abierta para hoy</p>
                 <button className="btn btn-primary" onClick={openSession} disabled={loading}>
-                  {loading ? <span className="spinner"/> : null} Abrir sesiÃ³n de hoy
+                  {loading ? <span className="spinner"/> : null} Abrir sesión de hoy
                 </button>
               </div>
             ) : (
@@ -990,19 +990,19 @@ function App() {
                   <div>
                     <strong>{session.date}</strong>
                     <span style={{marginLeft:12,color:'var(--muted)',fontSize:13}}>
-                      {session.open ? 'SesiÃ³n activa â€” podÃ©s cargar PDFs y escanear' : 'SesiÃ³n cerrada'}
+                      {session.open ? 'Sesión activa — podés cargar PDFs y escanear' : 'Sesión cerrada'}
                     </span>
                   </div>
                   {session.open && (
-                    <button className="btn btn-danger" onClick={closeSession}>Cerrar sesiÃ³n</button>
+                    <button className="btn btn-danger" onClick={closeSession}>Cerrar sesión</button>
                   )}
                 </div>
 
                 <div className="stats">
                   <div className="stat"><div className="stat-val">{labels.length}</div><div className="stat-label">Etiquetas cargadas</div></div>
-                  <div className="stat"><div className="stat-val" style={{color:'var(--green)'}}>{matched.length}</div><div className="stat-label">Escaneados âœ“</div></div>
+                  <div className="stat"><div className="stat-val" style={{color:'var(--green)'}}>{matched.length}</div><div className="stat-label">Escaneados ✓</div></div>
                   <div className="stat"><div className="stat-val" style={{color:'var(--accent)'}}>{unmatched.length}</div><div className="stat-label">Sin escanear</div></div>
-                  <div className="stat"><div className="stat-val" style={{color:'var(--blue)'}}>{manualScans.length}</div><div className="stat-label">EnvÃ­os manuales</div></div>
+                  <div className="stat"><div className="stat-val" style={{color:'var(--blue)'}}>{manualScans.length}</div><div className="stat-label">Envíos manuales</div></div>
                 </div>
 
                 {/* Upload PDFs */}
@@ -1010,8 +1010,8 @@ function App() {
                   <div className="card">
                     <div className="card-title">Cargar etiquetas PDF</div>
                     <div className="dropzone" onDragOver={e=>e.preventDefault()} onDrop={handlePDFDrop} onClick={()=>document.getElementById('pdfInput').click()}>
-                      <div className="dropzone-icon">{loading ? 'â³' : 'ðŸ“„'}</div>
-                      <div className="dropzone-text">{loading ? 'Procesando PDF...' : 'ArrastrÃ¡ los PDF de etiquetas aquÃ­, o hacÃ© click'}</div>
+                      <div className="dropzone-icon">{loading ? '⏳' : '📄'}</div>
+                      <div className="dropzone-text">{loading ? 'Procesando PDF...' : 'Arrastrá los PDF de etiquetas aquí, o hacé click'}</div>
                       <input id="pdfInput" type="file" accept=".pdf" multiple style={{display:'none'}} onChange={handlePDFDrop} />
                     </div>
                     {loading && <div className="progress-bar" style={{marginTop:8}}><div className="progress-fill" style={{width:'60%'}} /></div>}
@@ -1022,11 +1022,11 @@ function App() {
                 {labels.length > 0 && (
                   <div className="card">
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-                      <div className="card-title" style={{marginBottom:0}}>Etiquetas en sesiÃ³n ({labels.length})</div>
+                      <div className="card-title" style={{marginBottom:0}}>Etiquetas en sesión ({labels.length})</div>
                       {selectedLabels.length > 0 && (
                         <button className="btn btn-danger" style={{fontSize:12,padding:'6px 12px'}}
-                          onClick={()=>{ if(confirm(`Â¿Borrar ${selectedLabels.length} etiqueta(s) seleccionada(s)?`)){ deleteLabels(selectedLabels); setSelectedLabels([]); } }}>
-                          ðŸ—‘ Borrar {selectedLabels.length} seleccionada(s)
+                          onClick={()=>{ if(confirm(`¿Borrar ${selectedLabels.length} etiqueta(s) seleccionada(s)?`)){ deleteLabels(selectedLabels); setSelectedLabels([]); } }}>
+                          🗑 Borrar {selectedLabels.length} seleccionada(s)
                         </button>
                       )}
                     </div>
@@ -1037,7 +1037,7 @@ function App() {
                             <input type="checkbox" checked={selectedLabels.length===labels.length && labels.length>0}
                               onChange={e=>setSelectedLabels(e.target.checked ? labels.map(l=>l.id) : [])} />
                           </th>
-                          <th>Etiqueta</th><th>EnvÃ­o ID</th><th>SKU</th><th>Destinatario</th><th>Localidad</th><th>CP</th><th>Estado</th><th></th>
+                          <th>Etiqueta</th><th>Envío ID</th><th>SKU</th><th>Destinatario</th><th>Localidad</th><th>CP</th><th>Estado</th><th></th>
                         </tr></thead>
                         <tbody>
                           {labels.map(l => (
@@ -1048,16 +1048,16 @@ function App() {
                               </td>
                               <td>{l.thumb && <img src={l.thumb} className="label-thumb" onClick={()=>setImgModal(l)} />}</td>
                               <td style={{fontFamily:'monospace',fontSize:12}}>{l.id}</td>
-                              <td><span className="chip">{l.sku||'â€”'}</span>{heavySkus.includes(l.sku) && <span className="badge badge-yellow" style={{marginLeft:4}}>âš–ï¸ Pesado</span>}</td>
-                              <td style={{fontSize:12}}>{l.dest||'â€”'}</td>
-                              <td>{l.loc||'â€”'}</td>
-                              <td>{l.cp||'â€”'}</td>
-                              <td>{l.matched ? <span className="badge badge-green">âœ“ Escaneado</span> : <span className="badge badge-yellow">Pendiente</span>}</td>
+                              <td><span className="chip">{l.sku||'—'}</span>{heavySkus.includes(l.sku) && <span className="badge badge-yellow" style={{marginLeft:4}}>⚖️ Pesado</span>}</td>
+                              <td style={{fontSize:12}}>{l.dest||'—'}</td>
+                              <td>{l.loc||'—'}</td>
+                              <td>{l.cp||'—'}</td>
+                              <td>{l.matched ? <span className="badge badge-green">✓ Escaneado</span> : <span className="badge badge-yellow">Pendiente</span>}</td>
                               <td>
                                 <button className="btn btn-ghost" style={{padding:'5px 9px',fontSize:13}}
                                   title="Borrar esta etiqueta"
-                                  onClick={()=>{ const msg = l.matched ? `La etiqueta ${l.id} ya fue escaneada. El registro del escaneo se conserva, pero quedarÃ¡ sin etiqueta vinculada hasta que vuelvas a cargar el PDF. Â¿Borrar igual?` : `Â¿Borrar la etiqueta ${l.id}?`; if(confirm(msg)) deleteLabel(l.id); }}>
-                                  ðŸ—‘
+                                  onClick={()=>{ const msg = l.matched ? `La etiqueta ${l.id} ya fue escaneada. El registro del escaneo se conserva, pero quedará sin etiqueta vinculada hasta que vuelvas a cargar el PDF. ¿Borrar igual?` : `¿Borrar la etiqueta ${l.id}?`; if(confirm(msg)) deleteLabel(l.id); }}>
+                                  🗑
                                 </button>
                               </td>
                             </tr>
@@ -1072,36 +1072,36 @@ function App() {
           </>
         )}
 
-        {/* â”€â”€ ESCANEAR TAB â”€â”€ */}
+        {/* ── ESCANEAR TAB ── */}
         {tab==='escanear' && (
           <>
             <div className="section-title">Escanear paquetes</div>
             {!session?.open ? (
-              <div className="card empty"><div className="empty-icon">ðŸ”’</div><p>AbrÃ­ una sesiÃ³n para escanear</p></div>
+              <div className="card empty"><div className="empty-icon">🔒</div><p>Abrí una sesión para escanear</p></div>
             ) : (
               <>
                 <div className="card">
-                  <div className="card-title">ApuntÃ¡ la pistola lectora aquÃ­</div>
+                  <div className="card-title">Apuntá la pistola lectora aquí</div>
                   <div className="scan-input-wrap">
-                    <span className="scan-icon">â–¦</span>
+                    <span className="scan-icon">▦</span>
                     <input
                       ref={scanRef}
                       className="input"
                       value={scanInput}
                       onChange={e=>setScanInput(e.target.value)}
                       onKeyDown={e=>{ if(e.key==='Enter') handleScan(scanInput); }}
-                      placeholder="EscaneÃ¡ el QR del paquete o escribÃ­ el ID..."
+                      placeholder="Escaneá el QR del paquete o escribí el ID..."
                       autoFocus
                     />
                   </div>
-                  <p style={{color:'var(--muted)',fontSize:12,marginTop:8}}>La pistola lectora hace Enter automÃ¡ticamente al terminar de leer el QR</p>
+                  <p style={{color:'var(--muted)',fontSize:12,marginTop:8}}>La pistola lectora hace Enter automáticamente al terminar de leer el QR</p>
                   <div style={{display:'flex',alignItems:'center',gap:10,margin:'14px 0'}}>
                     <div style={{flex:1,borderTop:'1px solid var(--border)'}} />
                     <span style={{color:'var(--muted)',fontSize:12}}>o</span>
                     <div style={{flex:1,borderTop:'1px solid var(--border)'}} />
                   </div>
                   <button className="btn btn-primary" style={{width:'100%',justifyContent:'center'}} onClick={()=>setCameraOpen(true)}>
-                    ðŸ“· Escanear con la cÃ¡mara
+                    📷 Escanear con la cámara
                   </button>
                 </div>
 
@@ -1112,7 +1112,7 @@ function App() {
 
                 {scans.length > 0 && (
                   <div className="card">
-                    <div className="card-title">Escaneos de esta sesiÃ³n ({scans.length})</div>
+                    <div className="card-title">Escaneos de esta sesión ({scans.length})</div>
                     <div style={{overflowX:'auto'}}>
                       <table className="tbl">
                         <thead><tr><th>ID</th><th>Hora</th><th>Tipo</th></tr></thead>
@@ -1134,35 +1134,35 @@ function App() {
           </>
         )}
 
-        {/* â”€â”€ RESUMEN TAB â”€â”€ */}
+        {/* ── RESUMEN TAB ── */}
         {tab==='resumen' && (
           <>
-            <div className="section-title">Resumen de sesiÃ³n</div>
+            <div className="section-title">Resumen de sesión</div>
             {!session ? (
-              <div className="card empty"><div className="empty-icon">ðŸ“Š</div><p>No hay sesiÃ³n activa</p></div>
+              <div className="card empty"><div className="empty-icon">📊</div><p>No hay sesión activa</p></div>
             ) : (
               <>
                 <div className="stats">
                   <div className="stat"><div className="stat-val">{labels.length}</div><div className="stat-label">Total etiquetas</div></div>
                   <div className="stat"><div className="stat-val" style={{color:'var(--green)'}}>{matched.length}</div><div className="stat-label">Entregados a moto</div></div>
                   <div className="stat"><div className="stat-val" style={{color:'var(--red)'}}>{unmatched.length}</div><div className="stat-label">No escaneados</div></div>
-                  <div className="stat"><div className="stat-val" style={{color:'var(--accent)'}}>{labels.filter(l=>heavySkus.includes(l.sku)).length}</div><div className="stat-label">âš–ï¸ Pesados</div></div>
+                  <div className="stat"><div className="stat-val" style={{color:'var(--accent)'}}>{labels.filter(l=>heavySkus.includes(l.sku)).length}</div><div className="stat-label">⚖️ Pesados</div></div>
                 </div>
 
                 {unmatched.length > 0 && (
                   <div className="card">
-                    <div className="card-title" style={{color:'var(--accent)'}}>âš ï¸ Sin escanear â€” No entregados a moto</div>
+                    <div className="card-title" style={{color:'var(--accent)'}}>⚠️ Sin escanear — No entregados a moto</div>
                     <div style={{display:'flex',flexWrap:'wrap',gap:12}}>
                       {unmatched.map(l => (
                         <div key={l.id} style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:8,padding:12,width:140,position:'relative'}}>
                           <button className="btn btn-ghost" style={{position:'absolute',top:6,right:6,padding:'3px 6px',fontSize:11,zIndex:1}}
                             title="Borrar esta etiqueta"
-                            onClick={()=>{ const msg = l.matched ? `La etiqueta ${l.id} ya fue escaneada. El registro del escaneo se conserva, pero quedarÃ¡ sin etiqueta vinculada hasta que vuelvas a cargar el PDF. Â¿Borrar igual?` : `Â¿Borrar la etiqueta ${l.id}?`; if(confirm(msg)) deleteLabel(l.id); }}>
-                            ðŸ—‘
+                            onClick={()=>{ const msg = l.matched ? `La etiqueta ${l.id} ya fue escaneada. El registro del escaneo se conserva, pero quedará sin etiqueta vinculada hasta que vuelvas a cargar el PDF. ¿Borrar igual?` : `¿Borrar la etiqueta ${l.id}?`; if(confirm(msg)) deleteLabel(l.id); }}>
+                            🗑
                           </button>
                           {l.thumb && <img src={l.thumb} style={{width:'100%',borderRadius:4,marginBottom:8,cursor:'pointer'}} onClick={()=>setImgModal(l)} />}
                           <div style={{fontSize:11,fontFamily:'monospace',wordBreak:'break-all'}}>{l.id}</div>
-                          <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{l.loc||l.cp||'â€”'}</div>
+                          <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{l.loc||l.cp||'—'}</div>
                         </div>
                       ))}
                     </div>
@@ -1172,11 +1172,11 @@ function App() {
                 {/* Zone summary */}
                 {zones.length > 0 && labels.length > 0 && (
                   <div className="card">
-                    <div className="card-title">EstimaciÃ³n de costo ({session.date})</div>
+                    <div className="card-title">Estimación de costo ({session.date})</div>
                     {(() => {
                       const cost = calcSessionCost(labels, zones, heavySkus);
                       if (cost.byZone.length === 0) {
-                        return <p style={{color:'var(--muted)',fontSize:13}}>TodavÃ­a no hay paquetes escaneados que coincidan con una zona configurada.</p>;
+                        return <p style={{color:'var(--muted)',fontSize:13}}>Todavía no hay paquetes escaneados que coincidan con una zona configurada.</p>;
                       }
                       return (
                         <div style={{overflowX:'auto'}}>
@@ -1187,13 +1187,13 @@ function App() {
                                 <tr key={z.name}>
                                   <td>{z.name}</td>
                                   <td>{z.count}</td>
-                                  <td>{z.heavyCount > 0 ? <span className="badge badge-yellow">âš–ï¸ {z.heavyCount}</span> : 'â€”'}</td>
+                                  <td>{z.heavyCount > 0 ? <span className="badge badge-yellow">⚖️ {z.heavyCount}</span> : '—'}</td>
                                   <td>${z.price.toLocaleString('es-AR')}</td>
                                   <td style={{fontWeight:700}}>${z.subtotal.toLocaleString('es-AR')}</td>
                                 </tr>
                               ))}
                               <tr>
-                                <td colSpan={4} style={{fontWeight:700,textAlign:'right'}}>Total del dÃ­a</td>
+                                <td colSpan={4} style={{fontWeight:700,textAlign:'right'}}>Total del día</td>
                                 <td style={{fontWeight:800,color:'var(--accent)'}}>${cost.total.toLocaleString('es-AR')}</td>
                               </tr>
                             </tbody>
@@ -1208,12 +1208,12 @@ function App() {
           </>
         )}
 
-        {/* â”€â”€ HISTORIAL TAB â”€â”€ */}
+        {/* ── HISTORIAL TAB ── */}
         {tab==='historial' && (
           <>
             <div className="section-title">Historial de sesiones</div>
             {sessions.length === 0 ? (
-              <div className="card empty"><div className="empty-icon">ðŸ—“</div><p>No hay sesiones guardadas</p></div>
+              <div className="card empty"><div className="empty-icon">🗓</div><p>No hay sesiones guardadas</p></div>
             ) : (
               <>
                 <div className="card">
@@ -1232,21 +1232,21 @@ function App() {
                               <td>{lbs.length}</td>
                               <td><span className="badge badge-green">{sc.length}</span></td>
                               <td>{un.length > 0 ? <span className="badge badge-yellow">{un.length}</span> : <span className="badge badge-green">0</span>}</td>
-                              <td style={{fontWeight:600}}>{cost.total > 0 ? `$${cost.total.toLocaleString('es-AR')}` : 'â€”'}</td>
+                              <td style={{fontWeight:600}}>{cost.total > 0 ? `$${cost.total.toLocaleString('es-AR')}` : '—'}</td>
                               <td>{s.open ? <span className="badge badge-blue">Abierta</span> : <span className="badge badge-red">Cerrada</span>}</td>
                               <td>
                                 <div style={{display:'flex',gap:6}}>
                                   {s.open && (
                                     <button className="btn btn-ghost" style={{padding:'5px 9px',fontSize:12}}
-                                      title="Cerrar esta sesiÃ³n"
-                                      onClick={()=>{ if(confirm(`Â¿Cerrar la sesiÃ³n del ${s.date}?`)) closeSessionById(s.id); }}>
-                                      ðŸ”’ Cerrar
+                                      title="Cerrar esta sesión"
+                                      onClick={()=>{ if(confirm(`¿Cerrar la sesión del ${s.date}?`)) closeSessionById(s.id); }}>
+                                      🔒 Cerrar
                                     </button>
                                   )}
                                   <button className="btn btn-ghost" style={{padding:'5px 9px',fontSize:12,color:'var(--red)'}}
-                                    title="Eliminar esta sesiÃ³n por completo"
-                                    onClick={()=>{ if(confirm(`Â¿Eliminar definitivamente la sesiÃ³n del ${s.date}? Esto borra sus etiquetas y escaneos guardados, no se puede deshacer.`)) deleteSession(s.id, s.date); }}>
-                                    ðŸ—‘
+                                    title="Eliminar esta sesión por completo"
+                                    onClick={()=>{ if(confirm(`¿Eliminar definitivamente la sesión del ${s.date}? Esto borra sus etiquetas y escaneos guardados, no se puede deshacer.`)) deleteSession(s.id, s.date); }}>
+                                    🗑
                                   </button>
                                 </div>
                               </td>
@@ -1264,7 +1264,7 @@ function App() {
           </>
         )}
 
-        {/* â”€â”€ CONFIG TAB â”€â”€ */}
+        {/* ── CONFIG TAB ── */}
         {tab==='config' && (
           <>
             <ConfigPanel db={db} heavySkus={heavySkus} setHeavySkus={setHeavySkus} zones={zones} setZones={setZones} addToast={addToast} />
@@ -1276,7 +1276,7 @@ function App() {
   );
 }
 
-// â”€â”€â”€ CONFIG PANEL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── CONFIG PANEL ─────────────────────────────────────────────────────────────
 function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast }) {
   const [newSku, setNewSku] = useState('');
   const [newZone, setNewZone] = useState({ name:'', cp:'', price:'' });
@@ -1324,7 +1324,7 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast })
     return null;
   };
 
-  // â”€â”€ Import heavy SKUs from Excel/CSV â”€â”€
+  // ── Import heavy SKUs from Excel/CSV ──
   // Expected: a column with "sku" in its header. Any other columns are ignored.
   const importSkusFromExcel = async (e) => {
     const file = e.target.files?.[0];
@@ -1335,7 +1335,7 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast })
       const wb = window.XLSX.read(buf, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = window.XLSX.utils.sheet_to_json(ws, { defval: '' });
-      if (!rows.length) { addToast('Archivo vacÃ­o', 'No se encontraron filas en la hoja', 'alarm'); return; }
+      if (!rows.length) { addToast('Archivo vacío', 'No se encontraron filas en la hoja', 'alarm'); return; }
 
       const found = rows
         .map(r => findCol(r, ['sku']))
@@ -1343,22 +1343,22 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast })
         .map(v => String(v).trim().toUpperCase());
 
       if (!found.length) {
-        addToast('No se encontrÃ³ la columna SKU', 'Asegurate de tener una columna con encabezado "SKU"', 'alarm');
+        addToast('No se encontró la columna SKU', 'Asegurate de tener una columna con encabezado "SKU"', 'alarm');
         return;
       }
       const merged = [...new Set([...heavySkus, ...found])];
       setHeavySkus(merged);
       if (db) await db.collection('config').doc('heavy_skus').set({ list: merged });
-      addToast('SKUs importados', `${found.length} SKU(s) leÃ­dos del archivo, ${merged.length} en total`);
+      addToast('SKUs importados', `${found.length} SKU(s) leídos del archivo, ${merged.length} en total`);
     } catch(err) {
-      addToast('Error al leer el archivo', err.message || 'RevisÃ¡ que sea un .xlsx o .csv vÃ¡lido', 'alarm');
+      addToast('Error al leer el archivo', err.message || 'Revisá que sea un .xlsx o .csv válido', 'alarm');
     } finally {
       setImportingSkus(false);
       e.target.value = '';
     }
   };
 
-  // â”€â”€ Import zone tariffs from Excel/CSV â”€â”€
+  // ── Import zone tariffs from Excel/CSV ──
   // Expected columns (flexible headers): one with "zona"/"localidad", one with "cp"/"codigo",
   // and one with "tarifa"/"precio"/"valor"/"costo".
   const importZonesFromExcel = async (e) => {
@@ -1370,11 +1370,11 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast })
       const wb = window.XLSX.read(buf, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = window.XLSX.utils.sheet_to_json(ws, { defval: '' });
-      if (!rows.length) { addToast('Archivo vacÃ­o', 'No se encontraron filas en la hoja', 'alarm'); return; }
+      if (!rows.length) { addToast('Archivo vacío', 'No se encontraron filas en la hoja', 'alarm'); return; }
 
       const parsedZones = rows.map(r => {
         const name = findCol(r, ['zona', 'localidad', 'destino', 'barrio']);
-        const cp = findCol(r, ['cp', 'codigo postal', 'cÃ³digo postal']);
+        const cp = findCol(r, ['cp', 'codigo postal', 'código postal']);
         const priceRaw = findCol(r, ['tarifa', 'precio', 'valor', 'costo']);
         const price = priceRaw !== null ? Number(String(priceRaw).replace(/[^\d.,-]/g,'').replace(',','.')) : NaN;
         if (!name || isNaN(price)) return null;
@@ -1382,7 +1382,7 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast })
       }).filter(Boolean);
 
       if (!parsedZones.length) {
-        addToast('No se pudieron leer zonas', 'VerificÃ¡ que haya columnas de Zona/Localidad y Tarifa/Precio con valores numÃ©ricos', 'alarm');
+        addToast('No se pudieron leer zonas', 'Verificá que haya columnas de Zona/Localidad y Tarifa/Precio con valores numéricos', 'alarm');
         return;
       }
       // merge by name, new file overrides existing price for same zone name
@@ -1393,9 +1393,9 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast })
       });
       setZones(merged);
       if (db) await db.collection('config').doc('zones').set({ list: merged });
-      addToast('Zonas importadas', `${parsedZones.length} zona(s) leÃ­das del archivo, ${merged.length} en total`);
+      addToast('Zonas importadas', `${parsedZones.length} zona(s) leídas del archivo, ${merged.length} en total`);
     } catch(err) {
-      addToast('Error al leer el archivo', err.message || 'RevisÃ¡ que sea un .xlsx o .csv vÃ¡lido', 'alarm');
+      addToast('Error al leer el archivo', err.message || 'Revisá que sea un .xlsx o .csv válido', 'alarm');
     } finally {
       setImportingZones(false);
       e.target.value = '';
@@ -1404,16 +1404,16 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast })
 
   return (
     <>
-      <div className="section-title">ConfiguraciÃ³n</div>
+      <div className="section-title">Configuración</div>
 
       {/* Heavy SKUs */}
       <div className="card">
-        <div className="card-title">âš–ï¸ SKUs de envÃ­os pesados (pagan doble)</div>
+        <div className="card-title">⚖️ SKUs de envíos pesados (pagan doble)</div>
         <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:16}}>
           {heavySkus.length === 0 && <span style={{color:'var(--muted)',fontSize:13}}>No hay SKUs cargados</span>}
           {heavySkus.map(s => (
             <span key={s} className="chip" style={{cursor:'pointer'}} onClick={()=>removeSku(s)}>
-              {s} <span style={{color:'var(--red)',marginLeft:4}}>âœ•</span>
+              {s} <span style={{color:'var(--red)',marginLeft:4}}>✕</span>
             </span>
           ))}
         </div>
@@ -1427,7 +1427,7 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast })
           <div style={{flex:1,borderTop:'1px solid var(--border)'}} />
         </div>
         <label className="btn btn-ghost" style={{width:'100%',justifyContent:'center',cursor:'pointer'}}>
-          {importingSkus ? <span className="spinner"/> : 'ðŸ“‚'} Importar desde Excel/CSV
+          {importingSkus ? <span className="spinner"/> : '📂'} Importar desde Excel/CSV
           <input type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={importSkusFromExcel} disabled={importingSkus} />
         </label>
         <p style={{color:'var(--muted)',fontSize:12,marginTop:8}}>El archivo debe tener una columna con encabezado "SKU"</p>
@@ -1435,7 +1435,7 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast })
 
       {/* Zones */}
       <div className="card">
-        <div className="card-title">ðŸ—º Tarifas por zona/localidad</div>
+        <div className="card-title">🗺 Tarifas por zona/localidad</div>
         {zones.length > 0 && (
           <div style={{overflowX:'auto',marginBottom:16}}>
             <table className="tbl">
@@ -1444,9 +1444,9 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast })
                 {zones.map(z => (
                   <tr key={z.name}>
                     <td>{z.name}</td>
-                    <td>{z.cp||'â€”'}</td>
+                    <td>{z.cp||'—'}</td>
                     <td>${z.price.toLocaleString('es-AR')}</td>
-                    <td><button className="btn btn-ghost" style={{padding:'4px 8px',fontSize:12}} onClick={()=>removeZone(z.name)}>âœ•</button></td>
+                    <td><button className="btn btn-ghost" style={{padding:'4px 8px',fontSize:12}} onClick={()=>removeZone(z.name)}>✕</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -1459,14 +1459,14 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast })
           <input className="input" placeholder="$ tarifa" type="number" value={newZone.price} onChange={e=>setNewZone(p=>({...p,price:e.target.value}))} />
           <button className="btn btn-primary" onClick={addZone}>Agregar</button>
         </div>
-        <p style={{color:'var(--muted)',fontSize:12,marginTop:10}}>Los envÃ­os pesados se calculan como tarifa Ã— 2</p>
+        <p style={{color:'var(--muted)',fontSize:12,marginTop:10}}>Los envíos pesados se calculan como tarifa × 2</p>
         <div style={{display:'flex',alignItems:'center',gap:10,margin:'14px 0'}}>
           <div style={{flex:1,borderTop:'1px solid var(--border)'}} />
           <span style={{color:'var(--muted)',fontSize:12}}>o</span>
           <div style={{flex:1,borderTop:'1px solid var(--border)'}} />
         </div>
         <label className="btn btn-ghost" style={{width:'100%',justifyContent:'center',cursor:'pointer'}}>
-          {importingZones ? <span className="spinner"/> : 'ðŸ“‚'} Importar desde Excel/CSV
+          {importingZones ? <span className="spinner"/> : '📂'} Importar desde Excel/CSV
           <input type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={importZonesFromExcel} disabled={importingZones} />
         </label>
         <p style={{color:'var(--muted)',fontSize:12,marginTop:8}}>Columnas esperadas: Zona/Localidad, CP (opcional), Tarifa/Precio. Si una zona ya existe, se actualiza su tarifa.</p>
