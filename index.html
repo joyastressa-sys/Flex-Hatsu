@@ -262,6 +262,10 @@ function calcSessionCost(sessionLabels, zones, heavySkus) {
     if (z) {
       if (!zoneMap[z.name]) zoneMap[z.name] = { zone: z, labels: [] };
       zoneMap[z.name].labels.push(l);
+      // Track each unique label locality for display (show what the label says, not the zone name)
+      if (!zoneMap[z.name].labelLocs) zoneMap[z.name].labelLocs = {};
+      const lDisplay = [l.partido, l.loc].filter(Boolean).join(' / ') || l.cp || z.name;
+      zoneMap[z.name].labelLocs[lDisplay] = (zoneMap[z.name].labelLocs[lDisplay]||0) + 1;
     } else {
       unzoned.push(l);
     }
@@ -270,7 +274,10 @@ function calcSessionCost(sessionLabels, zones, heavySkus) {
   const byZone = Object.values(zoneMap).map(({ zone, labels }) => {
     const heavyCount = labels.filter(l => heavySkus.includes(l.sku)).length;
     const subtotal = labels.length * zone.price + heavyCount * zone.price;
-    return { name: zone.name, cp: zone.cp, count: labels.length, heavyCount, price: zone.price, subtotal };
+    // Build display: if all labels have same locality, show that; otherwise show "Zone (n localities)"
+    const locs = Object.entries(zoneMap[zone.name]?.labelLocs || {});
+    const displayName = locs.length === 1 ? locs[0][0] : locs.length === 0 ? zone.name : zone.name + ' (' + locs.map(([k,v])=>k+(v>1?' x'+v:'')).join(', ') + ')';
+    return { name: zone.name, displayName, cp: zone.cp, count: labels.length, heavyCount, price: zone.price, subtotal };
   }).sort((a,b) => b.subtotal - a.subtotal);
 
   const total = byZone.reduce((sum, z) => sum + z.subtotal, 0);
@@ -306,7 +313,7 @@ function generateSessionReport(session, labels, scans, zones, heavySkus) {
 
   const costTableRows = cost.byZone.map(z => `
     <tr>
-      <td>${z.name}</td>
+      <td>${z.displayName||z.name}</td>
       <td>${z.count}</td>
       <td>${z.heavyCount > 0 ? `⚖️ ${z.heavyCount}` : '—'}</td>
       <td>$${z.price.toLocaleString('es-AR')}</td>
@@ -376,20 +383,7 @@ function generateSessionReport(session, labels, scans, zones, heavySkus) {
         <td class="total-amount">$${cost.total.toLocaleString('es-AR')}</td>
       </tr>
     </tbody>
-  </table>` : ''}
-
-  <h2>✅ Entregados a moto (${matched.length})</h2>
-  <div class="label-grid">
-    ${matched.map(l => labelCard(l, true)).join('')}
-  </div>
-
-  ${unmatched.length > 0 ? `
-  <div class="unmatched-section">
-    <h2 style="border-color:#f97316;margin-top:0">⚠️ No escaneados — No entregados (${unmatched.length})</h2>
-    <div class="label-grid">
-      ${unmatched.map(l => labelCard(l, true)).join('')}
-    </div>
-  </div>` : '<p style="color:#16a34a;font-weight:700;margin-bottom:16px">✓ Todos los paquetes fueron entregados.</p>'}
+  </table>` : '<p style="color:#888;margin-top:16px">No hay tarifas configuradas para este período.</p>'}
 
   <div class="footer">
     <span>FLEX Tracker — Control de Entregas</span>
@@ -1367,27 +1361,7 @@ function App() {
                   <div className="stat"><div className="stat-val" style={{color:'var(--accent)'}}>{labels.filter(l=>heavySkus.includes(l.sku)).length}</div><div className="stat-label">⚖️ Pesados</div></div>
                 </div>
 
-                {unmatched.length > 0 && (
-                  <div className="card">
-                    <div className="card-title" style={{color:'var(--accent)'}}>⚠️ Sin escanear — No entregados a moto</div>
-                    <div style={{display:'flex',flexWrap:'wrap',gap:12}}>
-                      {unmatched.map(l => (
-                        <div key={l.id} style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:8,padding:12,width:140,position:'relative'}}>
-                          <button className="btn btn-ghost" style={{position:'absolute',top:6,right:6,padding:'3px 6px',fontSize:11,zIndex:1}}
-                            title="Borrar esta etiqueta"
-                            onClick={()=>{ const msg = l.matched ? `La etiqueta ${l.id} ya fue escaneada. El registro del escaneo se conserva, pero quedará sin etiqueta vinculada hasta que vuelvas a cargar el PDF. ¿Borrar igual?` : `¿Borrar la etiqueta ${l.id}?`; if(confirm(msg)) deleteLabel(l.id); }}>
-                            🗑
-                          </button>
-                          {l.thumb && <img src={l.thumb} style={{width:'100%',borderRadius:4,marginBottom:8,cursor:'pointer'}} onClick={()=>setImgModal(l)} />}
-                          <div style={{fontSize:11,fontFamily:'monospace',wordBreak:'break-all'}}>{l.id}</div>
-                          <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{l.loc||l.cp||'—'}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Zone summary */}
+                {/* Zone summary — FIRST after stats */}
                 {zones.length > 0 && labels.length > 0 && (
                   <div className="card">
                     <div className="card-title">Estimación de costo ({session.date})</div>
@@ -1403,7 +1377,7 @@ function App() {
                             <tbody>
                               {cost.byZone.map(z => (
                                 <tr key={z.name}>
-                                  <td>{z.name}</td>
+                                  <td>{z.displayName||z.name}</td>
                                   <td>{z.count}</td>
                                   <td>{z.heavyCount > 0 ? <span className="badge badge-yellow">⚖️ {z.heavyCount}</span> : '—'}</td>
                                   <td>${z.price.toLocaleString('es-AR')}</td>
@@ -1412,7 +1386,7 @@ function App() {
                               ))}
                               {cost.unzonedCount > 0 && (
                                 <tr>
-                                  <td style={{color:'var(--accent)'}} colSpan={4}>⚠️ Sin zona asignada — {cost.unzonedCount} paquete(s) ({cost.unzoned.map(l=>l.loc||l.cp||l.id).join(', ')})</td>
+                                  <td style={{color:'var(--accent)'}} colSpan={4}>⚠️ Sin zona asignada — {cost.unzonedCount} paquete(s) ({cost.unzoned.map(l=>[l.partido,l.loc].filter(Boolean).join('/')||l.cp||l.id).join(', ')})</td>
                                   <td style={{color:'var(--muted)'}}>—</td>
                                 </tr>
                               )}
@@ -1427,6 +1401,43 @@ function App() {
                         </div>
                       );
                     })()}
+                  </div>
+                )}
+
+                {/* Matched labels photos */}
+                {matched.length > 0 && (
+                  <div className="card">
+                    <div className="card-title" style={{color:'var(--green)'}}>✅ Entregados a moto ({matched.length})</div>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:12}}>
+                      {matched.map(l => (
+                        <div key={l.id} style={{background:'var(--surface2)',border:'1px solid rgba(34,197,94,.3)',borderRadius:8,padding:12,width:140}}>
+                          {l.thumb && <img src={l.thumb} style={{width:'100%',borderRadius:4,marginBottom:8,cursor:'pointer'}} onClick={()=>setImgModal(l)} />}
+                          <div style={{fontSize:11,fontFamily:'monospace',wordBreak:'break-all'}}>{l.id}</div>
+                          <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{[l.partido,l.loc].filter(Boolean).join(' / ')||l.cp||'—'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Unmatched labels */}
+                {unmatched.length > 0 && (
+                  <div className="card">
+                    <div className="card-title" style={{color:'var(--accent)'}}>⚠️ Sin escanear — No entregados a moto ({unmatched.length})</div>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:12}}>
+                      {unmatched.map(l => (
+                        <div key={l.id} style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:8,padding:12,width:140,position:'relative'}}>
+                          <button className="btn btn-ghost" style={{position:'absolute',top:6,right:6,padding:'3px 6px',fontSize:11,zIndex:1}}
+                            title="Borrar esta etiqueta"
+                            onClick={()=>{ const msg = l.matched ? `La etiqueta ${l.id} ya fue escaneada. El registro del escaneo se conserva, pero quedará sin etiqueta vinculada hasta que vuelvas a cargar el PDF. ¿Borrar igual?` : `¿Borrar la etiqueta ${l.id}?`; if(confirm(msg)) deleteLabel(l.id); }}>
+                            🗑
+                          </button>
+                          {l.thumb && <img src={l.thumb} style={{width:'100%',borderRadius:4,marginBottom:8,cursor:'pointer'}} onClick={()=>setImgModal(l)} />}
+                          <div style={{fontSize:11,fontFamily:'monospace',wordBreak:'break-all'}}>{l.id}</div>
+                          <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{[l.partido,l.loc].filter(Boolean).join(' / ')||l.cp||'—'}</div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </>
