@@ -994,7 +994,7 @@ function App() {
           return l; // PDF no longer in memory, keep as-is
         }
       }));
-      const toPersist = updatedLabels.map(({pdfCacheKey, ...rest}) => rest);
+      const toPersist = updatedLabels.map(({pdfCacheKey, text, thumb, hdThumb, ...rest}) => rest);
       await db.collection('sessions').doc(session.id).update({ labels: toPersist, open: false, closedAt: new Date().toISOString() });
       setLabels(updatedLabels);
       setSession(p => ({...p, open: false}));
@@ -1054,7 +1054,7 @@ function App() {
       }
       setLabels(allLabels);
       // pdfCacheKey points to in-memory data only — strip it before persisting to Firestore
-      const toPersist = allLabels.map(({pdfCacheKey, ...rest}) => rest);
+      const toPersist = allLabels.map(({pdfCacheKey, text, thumb, hdThumb, ...rest}) => rest);
       await db.collection('sessions').doc(session.id).update({ labels: toPersist });
       addToast('PDF cargado', `${allLabels.length} etiquetas en sesión`);
     } catch(err) {
@@ -1137,7 +1137,8 @@ function App() {
       const updScans = [...scans, newScan];
       setLabels(updLabels);
       setScans(updScans);
-      await db.collection('sessions').doc(session.id).update({ labels: updLabels, scans: updScans });
+      const toPersistScan = updLabels.map(({pdfCacheKey, text, thumb, hdThumb, ...r}) => r);
+      await db.collection('sessions').doc(session.id).update({ labels: toPersistScan, scans: updScans });
       addToast('✅ Paquete registrado', `Envío ${scannedId} — ${labels[matchIdx].dest || labels[matchIdx].loc || ''}`);
     }
     scanRef.current?.focus();
@@ -1153,7 +1154,8 @@ function App() {
     if (!db || !session) return;
     const updated = labels.filter(l => l.id !== id);
     setLabels(updated);
-    await db.collection('sessions').doc(session.id).update({ labels: updated });
+    const toPersistDel = updated.map(({pdfCacheKey, text, thumb, hdThumb, ...rest}) => rest);
+    await db.collection('sessions').doc(session.id).update({ labels: toPersistDel });
     addToast('Etiqueta eliminada', id);
   };
 
@@ -1169,7 +1171,7 @@ function App() {
       setLabels(updLabels);
     }
     setScans(updScans);
-    const toPersist = updLabels.map(({pdfCacheKey, ...rest}) => rest);
+    const toPersist = updLabels.map(({pdfCacheKey, text, thumb, hdThumb, ...rest}) => rest);
     await db.collection('sessions').doc(session.id).update({ labels: toPersist, scans: updScans });
     addToast('Escaneo eliminado', scanToDelete?.scannedId || '');
   };
@@ -1179,7 +1181,8 @@ function App() {
     const idSet = new Set(ids);
     const updated = labels.filter(l => !idSet.has(l.id));
     setLabels(updated);
-    await db.collection('sessions').doc(session.id).update({ labels: updated });
+    const toPersistDels = updated.map(({pdfCacheKey, text, thumb, hdThumb, ...rest}) => rest);
+    await db.collection('sessions').doc(session.id).update({ labels: toPersistDels });
     addToast('Etiquetas eliminadas', `${ids.length} etiqueta(s) borradas`);
   };
 
@@ -1194,7 +1197,8 @@ function App() {
     setLabels(updLabels);
     setScans(updScans);
     setAgencyMatchModal(null);
-    await db.collection('sessions').doc(session.id).update({ labels: updLabels, scans: updScans });
+    const toPersistAgency = updLabels.map(({pdfCacheKey, text, thumb, hdThumb, ...r}) => r);
+    await db.collection('sessions').doc(session.id).update({ labels: toPersistAgency, scans: updScans });
     addToast('✅ Paquete de agencia registrado', `${label.dest || label.loc || label.id}`);
     scanRef.current?.focus();
   };
@@ -1243,13 +1247,14 @@ function App() {
     const snap = await db.collection('sessions').doc(pendingModal.sessionId).get();
     const existing = snap.data().labels || [];
     const merged = existing.map(l => updates.find(u=>u.id===l.id) || l);
-    await db.collection('sessions').doc(pendingModal.sessionId).update({ labels: merged });
+    const toPersistMerged = merged.map(({pdfCacheKey, text, thumb, hdThumb, ...r}) => r);
+    await db.collection('sessions').doc(pendingModal.sessionId).update({ labels: toPersistMerged });
     if (action==='keep') {
       // Bring to today
       const todayUnmatched = updates.map(l=>({...l, fromDate: pendingModal.date, matched:false}));
       const mergedToday = [...labels, ...todayUnmatched.filter(l=>!labels.find(x=>x.id===l.id))];
       setLabels(mergedToday);
-      if (session) await db.collection('sessions').doc(session.id).update({ labels: mergedToday });
+      if (session) { const toPersistToday = mergedToday.map(({pdfCacheKey, text, thumb, hdThumb, ...r}) => r); await db.collection('sessions').doc(session.id).update({ labels: toPersistToday }); }
       addToast('Etiquetas importadas', `${todayUnmatched.length} etiqueta(s) del ${pendingModal.date} agregadas a hoy`);
     }
     setPendingModal(null);
