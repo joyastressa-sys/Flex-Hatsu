@@ -677,6 +677,7 @@ function CameraScanner({ onResult, onClose }) {
   const rafRef = useRef(null);
   const [error, setError] = useState(null);
   const [status, setStatus] = useState('Iniciando cámara...');
+  const [lastScanned, setLastScanned] = useState(null); // { text, ts } for feedback
   const lastResultRef = useRef({ text: null, ts: 0 });
 
   useEffect(() => {
@@ -715,9 +716,10 @@ function CameraScanner({ onResult, onClose }) {
         const code = window.jsQR(imageData.data, imageData.width, imageData.height);
         if (code && code.data) {
           const now = Date.now();
-          // Debounce: avoid firing the same code repeatedly while still in frame
-          if (code.data !== lastResultRef.current.text || now - lastResultRef.current.ts > 2500) {
+          // Debounce: 3s after any scan to avoid reading same QR repeatedly
+          if (code.data !== lastResultRef.current.text || now - lastResultRef.current.ts > 3000) {
             lastResultRef.current = { text: code.data, ts: now };
+            setLastScanned({ text: code.data, ts: now });
             onResult(code.data);
           }
         }
@@ -733,6 +735,13 @@ function CameraScanner({ onResult, onClose }) {
     };
   }, []);
 
+  // Clear feedback after 2.5s
+  useEffect(() => {
+    if (!lastScanned) return;
+    const t = setTimeout(() => setLastScanned(null), 2500);
+    return () => clearTimeout(t);
+  }, [lastScanned]);
+
   return (
     <div className="overlay" onClick={onClose} style={{padding:16}}>
       <div style={{position:'relative',width:'min(94vw, 480px)',display:'flex',flexDirection:'column',alignItems:'center'}} onClick={e=>e.stopPropagation()}>
@@ -740,9 +749,14 @@ function CameraScanner({ onResult, onClose }) {
           <span style={{fontSize:13,color:error?'var(--red)':'var(--muted)'}}>{error || status}</span>
           <button className="btn btn-ghost" onClick={onClose}>✕ Cerrar</button>
         </div>
-        <div style={{width:'100%',aspectRatio:'1',borderRadius:8,overflow:'hidden',border:'2px solid var(--border)',position:'relative',background:'#000'}}>
+        <div style={{width:'100%',aspectRatio:'1',borderRadius:8,overflow:'hidden',border:`2px solid ${lastScanned ? 'var(--green)' : 'var(--border)'}`,position:'relative',background:'#000',transition:'border-color .3s'}}>
           <video ref={videoRef} playsInline muted style={{width:'100%',height:'100%',objectFit:'cover'}} />
-          <div style={{position:'absolute',inset:'15%',border:'3px solid var(--accent)',borderRadius:12,opacity:.7,pointerEvents:'none'}} />
+          <div style={{position:'absolute',inset:'15%',border:`3px solid ${lastScanned ? 'var(--green)' : 'var(--accent)'}`,borderRadius:12,opacity:.8,pointerEvents:'none',transition:'border-color .3s'}} />
+          {lastScanned && (
+            <div style={{position:'absolute',bottom:0,left:0,right:0,background:'rgba(34,197,94,.9)',color:'#000',padding:'10px 14px',fontSize:13,fontWeight:700,textAlign:'center'}}>
+              ✓ Escaneado
+            </div>
+          )}
         </div>
         <canvas ref={canvasRef} style={{display:'none'}} />
         <p style={{color:'var(--muted)',fontSize:12,marginTop:10,textAlign:'center'}}>
@@ -886,6 +900,10 @@ function App() {
   const [agencyMatchModal, setAgencyMatchModal] = useState(null); // { raw, scannedId, candidates[] }
   const [sessions, setSessions] = useState([]);        // past sessions
   const scanRef = useRef(null);
+  const scansRef = useRef(scans);
+  const labelsRef = useRef(labels);
+  useEffect(() => { scansRef.current = scans; }, [scans]);
+  useEffect(() => { labelsRef.current = labels; }, [labels]);
 
   // ── Init Firebase ──
   useEffect(() => {
@@ -1101,8 +1119,12 @@ function App() {
       scanSource = 'AGENCIA';
     }
 
-    // Try to match against loaded labels
-    const matchIdx = labels.findIndex(l =>
+    // Try to match against loaded labels — use ref to always get latest value
+    // (important for camera scanning where the callback closure can be stale)
+    const currentLabels = labelsRef.current;
+    const currentScans = scansRef.current;
+
+    const matchIdx = currentLabels.findIndex(l =>
       l.id === scannedId ||
       l.shipId === scannedId ||
       l.packId === scannedId ||
@@ -1112,13 +1134,10 @@ function App() {
 
     if (matchIdx === -1) {
       if (scanSource === 'AGENCIA') {
-        // For agency QRs the did/local don't match label IDs — show pending agency labels
-        // so the operator can manually confirm which package was just scanned
-        const agencyPending = labels.filter(l => l.source === 'AGENCIA' && !l.matched);
+        const agencyPending = currentLabels.filter(l => l.source === 'AGENCIA' && !l.matched);
         if (agencyPending.length > 0) {
           setAgencyMatchModal({ raw, scannedId, scanSource, candidates: agencyPending });
         } else {
-          // No agency labels loaded — treat as unknown manual
           const newToast = {
             id: Date.now()+Math.random(),
             title: '📦 QR de Agencia',
@@ -1130,7 +1149,6 @@ function App() {
           playAlarm();
         }
       } else {
-        // FLEX QR with no match — alarm
         const newToast = {
           id: Date.now()+Math.random(),
           title: '🚨 Escaneo sin etiqueta',
@@ -1142,15 +1160,15 @@ function App() {
         playAlarm();
       }
     } else {
-      // Match!
-      const updLabels = labels.map((l,i) => i===matchIdx ? {...l, matched:true, matchedAt: new Date().toISOString()} : l);
-      const newScan = { raw, scannedId, scanSource, ts: new Date().toISOString(), matched: true, labelId: labels[matchIdx].id };
-      const updScans = [...scans, newScan];
+      // Match! Use ref values to avoid stale closure
+      const updLabels = currentLabels.map((l,i) => i===matchIdx ? {...l, matched:true, matchedAt: new Date().toISOString()} : l);
+      const newScan = { raw, scannedId, scanSource, ts: new Date().toISOString(), matched: true, labelId: currentLabels[matchIdx].id };
+      const updScans = [...currentScans, newScan];
       setLabels(updLabels);
       setScans(updScans);
       const toPersistScan = updLabels.map(({pdfCacheKey, text, thumb, hdThumb, ...r}) => r);
       await db.collection('sessions').doc(session.id).update({ labels: toPersistScan, scans: updScans });
-      addToast('✅ Paquete registrado', `Envío ${scannedId} — ${labels[matchIdx].dest || labels[matchIdx].loc || ''}`);
+      addToast('✅ Paquete registrado', `Envío ${scannedId} — ${currentLabels[matchIdx].dest || currentLabels[matchIdx].loc || ''}`);
     }
     scanRef.current?.focus();
   };
