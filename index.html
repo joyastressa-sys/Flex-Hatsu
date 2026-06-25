@@ -1070,16 +1070,27 @@ function App() {
     setScanInput('');
 
     // ── Parse scanned QR — support multiple formats ──
-    // Format 1 (Mercado Libre FLEX): id[Ñ[47299295741[,...
-    // Format 2 (GURA/agency):        local[ñ 1, [did[ñ [132012[, [cliente[ñ 11, [empresa[ñ 273
+    // Format 1a (ML FLEX via gun scanner):  id[Ñ[47299295741[,...
+    // Format 1b (ML FLEX via camera/jsQR):  {"id":"47299295741","sender_id":...}
+    // Format 2  (GURA/agency):              local[ñ 1, [did[ñ [132012[,...
     let scannedId = raw.trim();
     let scanSource = 'FLEX';
+
+    // Try JSON format first (camera scan of ML QR)
+    let jsonQr = null;
+    try {
+      const cleaned = raw.trim().replace(/^[^{]*/, '').replace(/[^}]*$/, '');
+      if (cleaned.startsWith('{')) jsonQr = JSON.parse(cleaned);
+    } catch {}
 
     const mlMatch = raw.match(/\bid[Ñ\[]+(\d+)/i);
     const agencyDidMatch = raw.match(/\bdid[Ñ\[\s]+(\d+)/i);
     const agencyEnvioMatch = raw.match(/envio[Ñ\[\s]*(\d+)/i);
 
-    if (mlMatch) {
+    if (jsonQr?.id) {
+      scannedId = String(jsonQr.id);
+      scanSource = 'FLEX';
+    } else if (mlMatch) {
       scannedId = mlMatch[1];
       scanSource = 'FLEX';
     } else if (agencyDidMatch) {
