@@ -305,10 +305,19 @@ function calcSessionCost(sessionLabels, zones, heavySkus) {
 // ─── LOCAL FOLDER UTILITIES (File System Access API — Chrome/Edge only) ──────
 const isFileSystemAccessSupported = () => typeof window !== 'undefined' && 'showDirectoryPicker' in window;
 
-async function getOrCreateSubfolder(parentHandle, name) {
-  try {
-    return await parentHandle.getDirectoryHandle(name, { create: true });
-  } catch { return null; }
+async function getOrCreateSubfolder(parentHandle, path) {
+  // Support multi-level paths like "PDFs/2026-07-02" by splitting on /
+  const parts = path.split('/').filter(Boolean);
+  let current = parentHandle;
+  for (const part of parts) {
+    try {
+      current = await current.getDirectoryHandle(part, { create: true });
+    } catch (err) {
+      console.warn('Could not create subfolder:', part, err);
+      return null;
+    }
+  }
+  return current;
 }
 
 async function saveFileToFolder(folderHandle, subfolderName, fileName, content, mimeType = 'application/octet-stream') {
