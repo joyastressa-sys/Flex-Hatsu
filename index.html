@@ -1106,6 +1106,7 @@ function App() {
   const [heavySkus, setHeavySkus] = useState([]);      // heavy SKU list
   const [zones, setZones] = useState([]);              // zone tariff table
   const [loading, setLoading] = useState(false);
+  const [loadedPdfs, setLoadedPdfs] = useState([]); // [{name, cacheKey, size}] for export
   const [scanInput, setScanInput] = useState('');
   const [pendingModal, setPendingModal] = useState(null);
   const [imgModal, setImgModal] = useState(null);
@@ -1277,6 +1278,9 @@ function App() {
       let newlyMatchedCount = 0;
       for (const f of files) {
         addToast('Procesando PDF', f.name);
+        // Track this PDF so the user can manually export it to the local folder later
+        const cacheKey = `${f.name}_${f.size}`;
+        setLoadedPdfs(prev => prev.find(p=>p.cacheKey===cacheKey) ? prev : [...prev, { name: f.name, cacheKey, size: f.size }]);
         // Save a copy to local folder if one is configured
         if (folderHandleRef.current) {
           const subFolder = `PDFs/${session.date}`;
@@ -1678,6 +1682,58 @@ function App() {
                       <input id="pdfInput" type="file" accept=".pdf" multiple style={{display:'none'}} onChange={handlePDFDrop} />
                     </div>
                     {loading && <div className="progress-bar" style={{marginTop:8}}><div className="progress-fill" style={{width:'60%'}} /></div>}
+                  </div>
+                )}
+
+                {/* PDFs cargados en esta sesión — exportar a carpeta local */}
+                {loadedPdfs.length > 0 && (
+                  <div className="card">
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                      <div className="card-title" style={{marginBottom:0}}>📄 PDFs cargados ({loadedPdfs.length})</div>
+                      {folderName ? (
+                        <button className="btn btn-ghost" style={{fontSize:12,padding:'6px 12px'}}
+                          onClick={async ()=>{
+                            let ok=0, fail=0;
+                            for (const p of loadedPdfs) {
+                              const buf = pdfBufferCache[p.cacheKey];
+                              if (!buf) { fail++; continue; }
+                              const saved = await saveFileToFolder(folderHandleRef.current, `PDFs/${session?.date||'sin-fecha'}`, p.name, new Blob([buf],{type:'application/pdf'}));
+                              saved ? ok++ : fail++;
+                            }
+                            addToast('Exportación completada', `${ok} PDF(s) guardados en la carpeta${fail>0?`, ${fail} no disponibles en memoria`:''}`);
+                          }}>
+                          💾 Exportar todos a carpeta local
+                        </button>
+                      ) : (
+                        <span style={{fontSize:12,color:'var(--muted)'}}>Configurá una carpeta local en ⚙️ Config para exportar</span>
+                      )}
+                    </div>
+                    <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                      {loadedPdfs.map(p => {
+                        const inMemory = !!pdfBufferCache[p.cacheKey];
+                        return (
+                          <div key={p.cacheKey} style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'var(--surface2)',borderRadius:6,padding:'8px 12px'}}>
+                            <div style={{display:'flex',alignItems:'center',gap:8}}>
+                              <span style={{fontSize:18}}>📄</span>
+                              <div>
+                                <div style={{fontSize:13,fontWeight:600}}>{p.name}</div>
+                                <div style={{fontSize:11,color:'var(--muted)'}}>{inMemory ? '✓ En memoria' : '⚠️ No disponible (recargá la página)'}</div>
+                              </div>
+                            </div>
+                            {folderName && inMemory && (
+                              <button className="btn btn-ghost" style={{fontSize:12,padding:'5px 10px'}}
+                                onClick={async ()=>{
+                                  const buf = pdfBufferCache[p.cacheKey];
+                                  const saved = await saveFileToFolder(folderHandleRef.current, `PDFs/${session?.date||'sin-fecha'}`, p.name, new Blob([buf],{type:'application/pdf'}));
+                                  addToast(saved ? '✅ PDF guardado' : '❌ Error al guardar', p.name);
+                                }}>
+                                💾 Guardar
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
