@@ -302,8 +302,37 @@ function calcSessionCost(sessionLabels, zones, heavySkus) {
   };
 }
 
+// ─── LOCAL FOLDER UTILITIES (File System Access API — Chrome/Edge only) ──────
+const isFileSystemAccessSupported = () => typeof window !== 'undefined' && 'showDirectoryPicker' in window;
+
+async function getOrCreateSubfolder(parentHandle, name) {
+  try {
+    return await parentHandle.getDirectoryHandle(name, { create: true });
+  } catch { return null; }
+}
+
+async function saveFileToFolder(folderHandle, subfolderName, fileName, content, mimeType = 'application/octet-stream') {
+  if (!folderHandle) return false;
+  try {
+    const subfolder = subfolderName ? await getOrCreateSubfolder(folderHandle, subfolderName) : folderHandle;
+    if (!subfolder) return false;
+    const fileHandle = await subfolder.getFileHandle(fileName, { create: true });
+    const writable = await fileHandle.createWritable();
+    if (typeof content === 'string') {
+      await writable.write(new Blob([content], { type: mimeType }));
+    } else {
+      await writable.write(content); // Blob or ArrayBuffer
+    }
+    await writable.close();
+    return true;
+  } catch (err) {
+    console.warn('Could not save to local folder:', err);
+    return false;
+  }
+}
+
 // ─── SESSION PDF REPORT GENERATOR ────────────────────────────────────────────
-function generateSessionReport(session, labels, scans, zones, heavySkus) {
+function generateSessionReport(session, labels, scans, zones, heavySkus, folderHandle) {
   const cost = calcSessionCost(labels, zones, heavySkus);
   const matched = labels.filter(l => l.matched);
   const unmatched = labels.filter(l => !l.matched);
@@ -440,6 +469,12 @@ function generateSessionReport(session, labels, scans, zones, heavySkus) {
   const win = window.open('', '_blank');
   win.document.write(html);
   win.document.close();
+
+  // Save a copy to local folder if configured
+  if (folderHandle) {
+    const fileName = `Informe_FLEX_${session.date}.html`;
+    saveFileToFolder(folderHandle, 'Informes', fileName, html, 'text/html');
+  }
 }
 
 // ─── PDF PARSER ──────────────────────────────────────────────────────────────
@@ -778,7 +813,7 @@ function CameraScanner({ onResult, onClose }) {
 }
 
 // ─── BILLING RANGE PANEL (date-range cost summary, for paying the courier) ───
-function BillingRangePanel({ sessions, zones, heavySkus }) {
+function BillingRangePanel({ sessions, zones, heavySkus, folderHandleRef }) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
 
@@ -869,6 +904,12 @@ function BillingRangePanel({ sessions, zones, heavySkus }) {
 
     const fname = `Liquidacion_FLEX_${from||'inicio'}_a_${to||'hoy'}.xlsx`;
     window.XLSX.writeFile(wb, fname);
+
+    // Save a copy to local folder if configured
+    if (folderHandleRef?.current) {
+      const xlsxBuf = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      saveFileToFolder(folderHandleRef.current, 'Informes', fname, new Blob([xlsxBuf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+    }
   };
 
   const exportToPDF = () => {
@@ -947,6 +988,12 @@ function BillingRangePanel({ sessions, zones, heavySkus }) {
     const win = window.open('', '_blank');
     win.document.write(html);
     win.document.close();
+
+    // Save a copy to local folder if configured
+    if (folderHandleRef?.current) {
+      const fname = `Liquidacion_FLEX_${from||'inicio'}_a_${to||'hoy'}.html`;
+      saveFileToFolder(folderHandleRef.current, 'Informes', fname, html, 'text/html');
+    }
   };
 
   return (
@@ -1047,6 +1094,8 @@ function App() {
   const [firebaseCfg, setFirebaseCfg] = useState(getStoredConfig);
   const [db, setDb] = useState(null);
   const [storage, setStorage] = useState(null);
+  const folderHandleRef = useRef(null); // File System Access API handle for local folder
+  const [folderName, setFolderName] = useState('');
   const [tab, setTab] = useState('sesion');
   const [toasts, setToasts] = useState([]);
 
@@ -1192,6 +1241,22 @@ function App() {
     }
   };
 
+  // ── Local folder selector ──
+  const selectLocalFolder = async () => {
+    if (!isFileSystemAccessSupported()) {
+      addToast('No disponible', 'La selección de carpeta local solo funciona en Chrome o Edge en PC', 'alarm');
+      return;
+    }
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      folderHandleRef.current = handle;
+      setFolderName(handle.name);
+      addToast('✅ Carpeta local configurada', `Los PDFs e informes se guardarán en "${handle.name}"`);
+    } catch (err) {
+      if (err.name !== 'AbortError') addToast('Error', err.message, 'alarm');
+    }
+  };
+
   // ── Upload PDFs ──
   const handlePDFDrop = async (e) => {
     e.preventDefault();
@@ -1212,6 +1277,12 @@ function App() {
       let newlyMatchedCount = 0;
       for (const f of files) {
         addToast('Procesando PDF', f.name);
+        // Save a copy to local folder if one is configured
+        if (folderHandleRef.current) {
+          const subFolder = `PDFs/${session.date}`;
+          const buf = await f.arrayBuffer();
+          await saveFileToFolder(folderHandleRef.current, subFolder, f.name, new Blob([buf], {type:'application/pdf'}));
+        }
         const parsed = await parseLabelsPDF(f);
         parsed.forEach(lbl => {
           if (allLabels.find(x=>x.id===lbl.id)) return; // already present, skip
@@ -1413,9 +1484,16 @@ function App() {
     if (!db) return;
     try {
       await db.collection('sessions').doc(sessionId).update({ open: true, closedAt: null });
-      setSessions(p => p.map(s => s.id===sessionId ? {...s, open:true} : s));
-      if (session?.id === sessionId) setSession(p => ({...p, open:true}));
-      addToast('Sesión reabierta', `Podés seguir escaneando para el ${dateLabel}`);
+      // Load the full session data so it becomes the active working session
+      const snap = await db.collection('sessions').doc(sessionId).get();
+      const data = snap.data();
+      const reopened = { id: sessionId, ...data, open: true };
+      setSessions(p => p.map(s => s.id===sessionId ? reopened : s));
+      setSession(reopened);
+      setLabels(data.labels || []);
+      setScans(data.scans || []);
+      setTab('sesion'); // navigate to session tab so user can see it
+      addToast('Sesión reabierta', `Sesión del ${dateLabel} cargada como activa. Podés seguir escaneando.`);
     } catch(err) {
       addToast('Error', err.message || 'No se pudo reabrir la sesión', 'alarm');
     }
@@ -1732,7 +1810,7 @@ function App() {
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
               <div className="section-title" style={{marginBottom:0}}>Resumen de sesión</div>
               {session && labels.length > 0 && (
-                <button className="btn btn-primary" onClick={()=>generateSessionReport(session, labels, scans, zones, heavySkus)}>
+                <button className="btn btn-primary" onClick={()=>generateSessionReport(session, labels, scans, zones, heavySkus, folderHandleRef.current)}>
                   📄 Generar informe PDF
                 </button>
               )}
@@ -1888,7 +1966,7 @@ function App() {
                   </div>
                 </div>
 
-                <BillingRangePanel sessions={sessions} zones={zones} heavySkus={heavySkus} />
+                <BillingRangePanel sessions={sessions} zones={zones} heavySkus={heavySkus} folderHandleRef={folderHandleRef} />
               </>
             )}
           </>
@@ -1897,7 +1975,7 @@ function App() {
         {/* ── CONFIG TAB ── */}
         {tab==='config' && (
           <>
-            <ConfigPanel db={db} heavySkus={heavySkus} setHeavySkus={setHeavySkus} zones={zones} setZones={setZones} addToast={addToast} />
+            <ConfigPanel db={db} heavySkus={heavySkus} setHeavySkus={setHeavySkus} zones={zones} setZones={setZones} addToast={addToast} onSelectFolder={selectLocalFolder} folderName={folderName} />
           </>
         )}
 
@@ -1907,7 +1985,7 @@ function App() {
 }
 
 // ─── CONFIG PANEL ─────────────────────────────────────────────────────────────
-function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast }) {
+function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, onSelectFolder, folderName }) {
   const [newSku, setNewSku] = useState('');
   const [newZone, setNewZone] = useState({ name:'', cp:'', price:'' });
   const [importingSkus, setImportingSkus] = useState(false);
@@ -2100,6 +2178,32 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast })
           <input type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={importZonesFromExcel} disabled={importingZones} />
         </label>
         <p style={{color:'var(--muted)',fontSize:12,marginTop:8}}>Columnas esperadas: Zona/Localidad, CP (opcional), Tarifa/Precio. Si una zona ya existe, se actualiza su tarifa.</p>
+      </div>
+
+      {/* Local folder */}
+      <div className="card">
+        <div className="card-title">💾 Carpeta local de archivos</div>
+        <p style={{color:'var(--muted)',fontSize:13,marginBottom:12,lineHeight:1.6}}>
+          Elegí una carpeta en tu PC donde la app guardará automáticamente:<br/>
+          • Los PDFs de etiquetas que subas (organizados por fecha en subcarpetas)<br/>
+          • Los informes PDF y Excel que generes
+        </p>
+        {folderName && (
+          <div style={{display:'flex',alignItems:'center',gap:8,background:'rgba(34,197,94,.1)',border:'1px solid rgba(34,197,94,.3)',borderRadius:8,padding:'10px 14px',marginBottom:12}}>
+            <span style={{fontSize:18}}>📁</span>
+            <div>
+              <div style={{fontWeight:700,fontSize:14}}>{folderName}</div>
+              <div style={{fontSize:12,color:'var(--muted)'}}>Carpeta activa — se guardará hasta que cierres el navegador</div>
+            </div>
+          </div>
+        )}
+        <button className="btn btn-primary" onClick={onSelectFolder} disabled={!isFileSystemAccessSupported()}>
+          📁 {folderName ? 'Cambiar carpeta local' : 'Seleccionar carpeta local'}
+        </button>
+        {!isFileSystemAccessSupported() && (
+          <p style={{color:'var(--accent)',fontSize:12,marginTop:8}}>⚠️ Solo disponible en Chrome o Edge en PC. Safari y Firefox no soportan esta función.</p>
+        )}
+        <p style={{color:'var(--muted)',fontSize:11,marginTop:8}}>La selección se pierde al cerrar el navegador — hay que elegirla de nuevo la próxima sesión. Es una limitación del navegador por seguridad.</p>
       </div>
 
     </>
