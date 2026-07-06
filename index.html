@@ -234,9 +234,12 @@ function findZoneForLabel(label, zones) {
   const locText = [label.partido, label.loc].filter(Boolean).join(' ');
   const lLoc = normLocText(locText);
 
-  // 1) CP exact match
+  // 1) CP exact match — zones can have multiple CPs (z.cps array) or legacy single z.cp
   if (lcp) {
-    const byCP = zones.filter(z => z.cp && z.cp.trim() === lcp);
+    const byCP = zones.filter(z => {
+      if (Array.isArray(z.cps)) return z.cps.map(c=>String(c).trim()).includes(lcp);
+      return z.cp && String(z.cp).trim() === lcp;
+    });
     if (byCP.length === 1) return byCP[0];
     if (byCP.length > 1) {
       const locMatch = byCP.find(z => {
@@ -287,7 +290,8 @@ function calcSessionCost(sessionLabels, zones, heavySkus) {
     // Build display: if all labels have same locality, show that; otherwise show "Zone (n localities)"
     const locs = Object.entries(zoneMap[zone.name]?.labelLocs || {});
     const displayName = locs.length === 1 ? locs[0][0] : locs.length === 0 ? zone.name : zone.name + ' (' + locs.map(([k,v])=>k+(v>1?' x'+v:'')).join(', ') + ')';
-    return { name: zone.name, displayName, cp: zone.cp, count: labels.length, heavyCount, price: zone.price, subtotal };
+    const zoneCps = Array.isArray(zone.cps) ? zone.cps.map(String) : [zone.cp].filter(Boolean);
+    return { name: zone.name, displayName, cp: zoneCps[0]||'', cps: zoneCps, count: labels.length, heavyCount, price: zone.price, subtotal };
   }).sort((a,b) => b.subtotal - a.subtotal);
 
   const total = byZone.reduce((sum, z) => sum + z.subtotal, 0);
@@ -2073,7 +2077,8 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
 
   const addZone = async () => {
     if (!newZone.name || !newZone.price) return;
-    const z = { name: newZone.name, cp: newZone.cp, price: Number(newZone.price) };
+    const cpList = newZone.cp.split(/[,;\s]+/).map(s=>s.trim()).filter(Boolean);
+    const z = { name: newZone.name, cp: cpList[0]||'', cps: cpList, price: Number(newZone.price) };
     const updated = [...zones, z];
     setZones(updated);
     setNewZone({ name:'', cp:'', price:'' });
@@ -2145,20 +2150,35 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
       const rows = window.XLSX.utils.sheet_to_json(ws, { defval: '' });
       if (!rows.length) { addToast('Archivo vacío', 'No se encontraron filas en la hoja', 'alarm'); return; }
 
-      const parsedZones = rows.map(r => {
+      // Parse each row — multiple rows with the same zone name get grouped
+      // so all their CPs are collected into one zone entry with a cps[] array
+      const zoneMap = {}; // name -> { name, cps[], price }
+      rows.forEach(r => {
         const name = findCol(r, ['zona', 'localidad', 'destino', 'barrio']);
         const cp = findCol(r, ['cp', 'codigo postal', 'código postal']);
         const priceRaw = findCol(r, ['tarifa', 'precio', 'valor', 'costo']);
         const price = priceRaw !== null ? Number(String(priceRaw).replace(/[^\d.,-]/g,'').replace(',','.')) : NaN;
-        if (!name || isNaN(price)) return null;
-        return { name: String(name).trim(), cp: cp ? String(cp).trim() : '', price };
-      }).filter(Boolean);
+        if (!name || isNaN(price)) return;
+        const key = String(name).trim().toLowerCase();
+        if (!zoneMap[key]) {
+          zoneMap[key] = { name: String(name).trim(), cps: [], price };
+        }
+        if (cp) {
+          const cpStr = String(cp).trim();
+          if (cpStr && !zoneMap[key].cps.includes(cpStr)) zoneMap[key].cps.push(cpStr);
+        }
+        zoneMap[key].price = price; // last row wins for price
+      });
+
+      const parsedZones = Object.values(zoneMap).map(z => ({
+        ...z, cp: z.cps[0] || '' // keep cp for backward compat
+      }));
 
       if (!parsedZones.length) {
         addToast('No se pudieron leer zonas', 'Verificá que haya columnas de Zona/Localidad y Tarifa/Precio con valores numéricos', 'alarm');
         return;
       }
-      // merge by name, new file overrides existing price for same zone name
+      // merge by name — new file overrides existing zone
       const merged = [...zones];
       parsedZones.forEach(z => {
         const idx = merged.findIndex(m => m.name.toLowerCase() === z.name.toLowerCase());
@@ -2166,7 +2186,8 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
       });
       setZones(merged);
       if (db) await db.collection('config').doc('zones').set({ list: merged });
-      addToast('Zonas importadas', `${parsedZones.length} zona(s) leídas del archivo, ${merged.length} en total`);
+      const totalCPs = parsedZones.reduce((s,z)=>s+z.cps.length,0);
+      addToast('Zonas importadas', `${parsedZones.length} zona(s) con ${totalCPs} código(s) postal(es) en total`);
     } catch(err) {
       addToast('Error al leer el archivo', err.message || 'Revisá que sea un .xlsx o .csv válido', 'alarm');
     } finally {
@@ -2212,12 +2233,12 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
         {zones.length > 0 && (
           <div style={{overflowX:'auto',marginBottom:16}}>
             <table className="tbl">
-              <thead><tr><th>Zona/Localidad</th><th>CP</th><th>Tarifa ($)</th><th></th></tr></thead>
+              <thead><tr><th>Zona/Localidad</th><th>CPs</th><th>Tarifa ($)</th><th></th></tr></thead>
               <tbody>
                 {zones.map(z => (
                   <tr key={z.name}>
                     <td>{z.name}</td>
-                    <td>{z.cp||'—'}</td>
+                    <td style={{fontSize:11}}>{(Array.isArray(z.cps)&&z.cps.length>0?z.cps:z.cp?[z.cp]:[]).join(', ')||'—'}</td>
                     <td>${z.price.toLocaleString('es-AR')}</td>
                     <td><button className="btn btn-ghost" style={{padding:'4px 8px',fontSize:12}} onClick={()=>removeZone(z.name)}>✕</button></td>
                   </tr>
@@ -2228,7 +2249,7 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
         )}
         <div style={{display:'grid',gridTemplateColumns:'1fr 100px 120px auto',gap:8,alignItems:'center'}}>
           <input className="input" placeholder="Localidad" value={newZone.name} onChange={e=>setNewZone(p=>({...p,name:e.target.value}))} />
-          <input className="input" placeholder="CP" value={newZone.cp} onChange={e=>setNewZone(p=>({...p,cp:e.target.value}))} />
+          <input className="input" placeholder="CP (varios: 1401,1402)" value={newZone.cp} onChange={e=>setNewZone(p=>({...p,cp:e.target.value}))} />
           <input className="input" placeholder="$ tarifa" type="number" value={newZone.price} onChange={e=>setNewZone(p=>({...p,price:e.target.value}))} />
           <button className="btn btn-primary" onClick={addZone}>Agregar</button>
         </div>
