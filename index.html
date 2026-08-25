@@ -1341,9 +1341,10 @@ function App() {
     setScanInput('');
 
     // ── Parse scanned QR — support multiple formats ──
-    // Format 1a (ML FLEX via gun scanner):  id[Ñ[47299295741[,...
-    // Format 1b (ML FLEX via camera/jsQR):  {"id":"47299295741","sender_id":...}
-    // Format 2  (GURA/agency):              local[ñ 1, [did[ñ [132012[,...
+    // Format 1a (ML FLEX via gun scanner, old):  id[Ñ[47299295741[,...
+    // Format 1b (ML FLEX via gun scanner, new):  ^"id`Ñ"47846375012"`sender?id`Ñ...
+    // Format 1c (ML FLEX via camera/jsQR):       {"id":"47299295741","sender_id":...}
+    // Format 2  (GURA/agency):                   local[ñ 1, [did[ñ [132012[,...
     let scannedId = raw.trim();
     let scanSource = 'FLEX';
 
@@ -1354,7 +1355,9 @@ function App() {
       if (cleaned.startsWith('{')) jsonQr = JSON.parse(cleaned);
     } catch {}
 
-    const mlMatch = raw.match(/\bid[Ñ\[]+(\d+)/i);
+    // ML match: covers old [Ñ[ format AND new `Ñ" / "Ñ" format and any other separator variation
+    // Pattern: word "id" + any non-digit chars (separators) + 8+ digit number
+    const mlMatch = raw.match(/\bid[^0-9]{1,10}?(\d{8,})/i);
     const agencyDidMatch = raw.match(/\bdid[Ñ\[\s]+(\d+)/i);
     const agencyEnvioMatch = raw.match(/envio[Ñ\[\s]*(\d+)/i);
 
