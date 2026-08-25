@@ -1358,8 +1358,9 @@ function App() {
     // ML match: covers old [Ñ[ format AND new `Ñ" / "Ñ" format and any other separator variation
     // Pattern: word "id" + any non-digit chars (separators) + 8+ digit number
     const mlMatch = raw.match(/\bid[^0-9]{1,10}?(\d{8,})/i);
-    const agencyDidMatch = raw.match(/\bdid[Ñ\[\s]+(\d+)/i);
-    const agencyEnvioMatch = raw.match(/envio[Ñ\[\s]*(\d+)/i);
+    // Agency (GURA): did field — same flexible separator approach, short numbers ok
+    const agencyDidMatch = raw.match(/\bdid[^0-9]{1,10}?(\d+)/i);
+    const agencyEnvioMatch = raw.match(/\benvio[^0-9]{1,10}?(\d+)/i);
 
     if (jsonQr?.id) {
       scannedId = String(jsonQr.id);
