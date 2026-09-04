@@ -523,7 +523,17 @@ async function parseLabelsPDF(file) {
 
     let sku    = (text.match(/SKU[:\s:]*([A-Z0-9\-\/\+]+)/i) || [])[1] || null;
     // Agency labels use "Observación:" for the product/SKU reference
-    if (!sku && isAgencyLabel) sku = (text.match(/Observaci[oó]n[:\s]+([^\s]{1,30})/i) || [])[1]?.trim() || null;
+    // Format: "D-V101/BK" or "Ref: PISO 8 dpto G / D-V101/BK" or "ML-GYM09"
+    // Strategy: find product-code pattern (letters-dash-alphanumeric) inside the field
+    if (!sku && isAgencyLabel) {
+      const obsMatch = text.match(/Observaci[oó]n[:\s]+(.+?)(?:\s{2,}|\n|Rte\.|Venta:|Envio:|GURA|$)/i);
+      if (obsMatch) {
+        const obsText = obsMatch[1].trim();
+        // Product codes look like D-V101/BK, ML-GYM09, A158WA-1D, D-RK9
+        const skuMatches = obsText.match(/\b([A-Z]{1,5}[-][A-Z0-9]{2,}(?:[\/\-][A-Z0-9]+)*)\b/gi);
+        if (skuMatches) sku = skuMatches.reduce((a,b) => b.length > a.length ? b : a);
+      }
+    }
 
     let dest   = (text.match(/Destinatario[:\s]*([^\n(]+)/i) || [])[1]?.trim() || null;
     // Agency (GURA): text structure is PARTIDO\nDESTINATARIO\nTELEFONO\n...
