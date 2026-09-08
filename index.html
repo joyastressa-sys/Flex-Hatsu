@@ -1796,7 +1796,14 @@ function App() {
                               <td style={{fontFamily:'monospace',fontSize:12}}>{l.id}</td>
                               <td><span className="chip">{l.sku||'—'}</span>{heavySkus.includes(l.sku) && <span className="badge badge-yellow" style={{marginLeft:4}}>⚖️ Pesado</span>}{l.source==='AGENCIA' && <span className="badge badge-blue" style={{marginLeft:4}}>Agencia</span>}</td>
                               <td style={{fontSize:12}}>{l.dest||'—'}</td>
-                              <td style={{fontSize:11}}>{[l.partido, l.loc].filter(Boolean).join(' / ') || '—'}</td>
+                              <td style={{fontSize:11}}>{(() => {
+                                let loc = [l.partido, l.loc].filter(Boolean).join(' / ');
+                                if (!loc && l.text) {
+                                  const m = l.text.match(/\bCP:\s*\d{4,5}\s+([A-ZÁÉÍÓÚÜÑA-Z][A-ZÁÉÍÓÚÜÑA-Z\s\-]{2,35}?)\s+([A-ZÁÉÍÓÚÜÑA-Z][A-ZÁÉÍÓÚÜÑA-Z\s\-]{2,35}?)\s+(?:RESIDENCIAL|COMERCIAL)/i);
+                                  if (m) loc = `${m[1].trim()} / ${m[2].trim()}`;
+                                }
+                                return loc || l.cp || '—';
+                              })()}</td>
                               <td>{l.cp||'—'}</td>
                               <td>{l.matched ? <span className="badge badge-green">✓ Escaneado</span> : <span className="badge badge-yellow">Pendiente</span>}</td>
                               <td>
@@ -2164,6 +2171,12 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
       const rows = window.XLSX.utils.sheet_to_json(ws, { defval: '' });
       if (!rows.length) { addToast('Archivo vacío', 'No se encontraron filas en la hoja', 'alarm'); return; }
 
+      // Warn user that existing zones will be replaced
+      if (zones.length > 0) {
+        const ok = confirm(`⚠️ ATENCIÓN: Vas a importar un nuevo tarifario.\n\nTenés ${zones.length} zona(s) cargada(s). Las zonas con el mismo nombre serán reemplazadas con los nuevos valores.\n\n¿Confirmar importación?`);
+        if (!ok) { setImportingZones(false); e.target.value = ''; return; }
+      }
+
       // Parse each row — multiple rows with the same zone name get grouped
       // so all their CPs are collected into one zone entry with a cps[] array
       const zoneMap = {}; // name -> { name, cps[], price }
@@ -2214,6 +2227,33 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
     <>
       <div className="section-title">Configuración</div>
 
+      {/* Local folder */}
+      <div className="card">
+        <div className="card-title">💾 Carpeta local de archivos</div>
+        <p style={{color:'var(--muted)',fontSize:13,marginBottom:12,lineHeight:1.6}}>
+          Elegí una carpeta en tu PC donde la app guardará automáticamente:<br/>
+          • Los PDFs de etiquetas que subas (organizados por fecha en subcarpetas)<br/>
+          • Los informes PDF y Excel que generes
+        </p>
+        {folderName && (
+          <div style={{display:'flex',alignItems:'center',gap:8,background:'rgba(34,197,94,.1)',border:'1px solid rgba(34,197,94,.3)',borderRadius:8,padding:'10px 14px',marginBottom:12}}>
+            <span style={{fontSize:18}}>📁</span>
+            <div>
+              <div style={{fontWeight:700,fontSize:14}}>{folderName}</div>
+              <div style={{fontSize:12,color:'var(--muted)'}}>Carpeta activa — se guardará hasta que cierres el navegador</div>
+            </div>
+          </div>
+        )}
+        <button className="btn btn-primary" onClick={onSelectFolder} disabled={!isFileSystemAccessSupported()}>
+          📁 {folderName ? 'Cambiar carpeta local' : 'Seleccionar carpeta local'}
+        </button>
+        {!isFileSystemAccessSupported() && (
+          <p style={{color:'var(--accent)',fontSize:12,marginTop:8}}>⚠️ Solo disponible en Chrome o Edge en PC. Safari y Firefox no soportan esta función.</p>
+        )}
+        <p style={{color:'var(--muted)',fontSize:11,marginTop:8}}>La selección se pierde al cerrar el navegador — hay que elegirla de nuevo la próxima sesión. Es una limitación del navegador por seguridad.</p>
+      </div>
+
+
       {/* Heavy SKUs */}
       <div className="card">
         <div className="card-title">⚖️ SKUs de envíos pesados (pagan doble)</div>
@@ -2249,7 +2289,7 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
             <table className="tbl">
               <thead><tr><th>Zona/Localidad</th><th>CPs</th><th>Tarifa ($)</th><th></th></tr></thead>
               <tbody>
-                {zones.map(z => (
+                {[...zones].sort((a,b)=>a.name.localeCompare(b.name,'es')).map(z => (
                   <tr key={z.name}>
                     <td>{z.name}</td>
                     <td style={{fontSize:11}}>{(Array.isArray(z.cps)&&z.cps.length>0?z.cps:z.cp?[z.cp]:[]).join(', ')||'—'}</td>
@@ -2278,32 +2318,6 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
           <input type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={importZonesFromExcel} disabled={importingZones} />
         </label>
         <p style={{color:'var(--muted)',fontSize:12,marginTop:8}}>Columnas esperadas: Zona/Localidad, CP (opcional), Tarifa/Precio. Si una zona ya existe, se actualiza su tarifa.</p>
-      </div>
-
-      {/* Local folder */}
-      <div className="card">
-        <div className="card-title">💾 Carpeta local de archivos</div>
-        <p style={{color:'var(--muted)',fontSize:13,marginBottom:12,lineHeight:1.6}}>
-          Elegí una carpeta en tu PC donde la app guardará automáticamente:<br/>
-          • Los PDFs de etiquetas que subas (organizados por fecha en subcarpetas)<br/>
-          • Los informes PDF y Excel que generes
-        </p>
-        {folderName && (
-          <div style={{display:'flex',alignItems:'center',gap:8,background:'rgba(34,197,94,.1)',border:'1px solid rgba(34,197,94,.3)',borderRadius:8,padding:'10px 14px',marginBottom:12}}>
-            <span style={{fontSize:18}}>📁</span>
-            <div>
-              <div style={{fontWeight:700,fontSize:14}}>{folderName}</div>
-              <div style={{fontSize:12,color:'var(--muted)'}}>Carpeta activa — se guardará hasta que cierres el navegador</div>
-            </div>
-          </div>
-        )}
-        <button className="btn btn-primary" onClick={onSelectFolder} disabled={!isFileSystemAccessSupported()}>
-          📁 {folderName ? 'Cambiar carpeta local' : 'Seleccionar carpeta local'}
-        </button>
-        {!isFileSystemAccessSupported() && (
-          <p style={{color:'var(--accent)',fontSize:12,marginTop:8}}>⚠️ Solo disponible en Chrome o Edge en PC. Safari y Firefox no soportan esta función.</p>
-        )}
-        <p style={{color:'var(--muted)',fontSize:11,marginTop:8}}>La selección se pierde al cerrar el navegador — hay que elegirla de nuevo la próxima sesión. Es una limitación del navegador por seguridad.</p>
       </div>
 
     </>
