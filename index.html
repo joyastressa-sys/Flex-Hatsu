@@ -2078,6 +2078,7 @@ function App() {
 function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, onSelectFolder, folderName }) {
   const [newSku, setNewSku] = useState('');
   const [newZone, setNewZone] = useState({ name:'', cp:'', price:'' });
+  const [editingZone, setEditingZone] = useState(null); // {origName, name, cp, price}
   const [importingSkus, setImportingSkus] = useState(false);
   const [importingZones, setImportingZones] = useState(false);
 
@@ -2127,6 +2128,19 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
   };
 
   // Find a column value in a row object by trying several possible header name fragments
+  const saveEditZone = async () => {
+    if (!editingZone || !editingZone.name.trim()) return;
+    const cpList = editingZone.cp.split(/[,;\s]+/).map(s=>s.trim()).filter(Boolean);
+    const updated = zones.map(z => z.name === editingZone.origName
+      ? { name: editingZone.name.trim(), cp: cpList[0]||'', cps: cpList, price: Number(editingZone.price) }
+      : z
+    );
+    setZones(updated);
+    setEditingZone(null);
+    if (db) await db.collection('config').doc('zones').set({ list: updated });
+    addToast('Zona actualizada', editingZone.name);
+  };
+
   const findCol = (row, candidates) => {
     const keys = Object.keys(row);
     for (const cand of candidates) {
@@ -2186,7 +2200,7 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
 
       // Warn user that existing zones will be replaced
       if (zones.length > 0) {
-        const ok = confirm(`⚠️ ATENCIÓN: Vas a importar un nuevo tarifario.\n\nTenés ${zones.length} zona(s) cargada(s). Las zonas con el mismo nombre serán reemplazadas con los nuevos valores.\n\n¿Confirmar importación?`);
+        const ok = confirm(`⚠️ ATENCIÓN: Esto REEMPLAZARÁ TODO el tarifario actual.\n\nSe eliminarán las ${zones.length} zona(s) cargadas y serán reemplazadas completamente por las del archivo nuevo.\n\n¿Confirmar reemplazo total?`);
         if (!ok) { setImportingZones(false); e.target.value = ''; return; }
       }
 
@@ -2218,16 +2232,11 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
         addToast('No se pudieron leer zonas', 'Verificá que haya columnas de Zona/Localidad y Tarifa/Precio con valores numéricos', 'alarm');
         return;
       }
-      // merge by name — new file overrides existing zone
-      const merged = [...zones];
-      parsedZones.forEach(z => {
-        const idx = merged.findIndex(m => m.name.toLowerCase() === z.name.toLowerCase());
-        if (idx >= 0) merged[idx] = z; else merged.push(z);
-      });
-      setZones(merged);
-      if (db) await db.collection('config').doc('zones').set({ list: merged });
+      // FULL REPLACEMENT — discard all existing zones and use only the imported ones
+      setZones(parsedZones);
+      if (db) await db.collection('config').doc('zones').set({ list: parsedZones });
       const totalCPs = parsedZones.reduce((s,z)=>s+z.cps.length,0);
-      addToast('Zonas importadas', `${parsedZones.length} zona(s) con ${totalCPs} código(s) postal(es) en total`);
+      addToast('✅ Tarifario reemplazado', `${parsedZones.length} zona(s) con ${totalCPs} código(s) postal(es) — datos anteriores eliminados`);
     } catch(err) {
       addToast('Error al leer el archivo', err.message || 'Revisá que sea un .xlsx o .csv válido', 'alarm');
     } finally {
@@ -2314,12 +2323,27 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
               <thead><tr><th>Zona/Localidad</th><th>CPs</th><th>Tarifa ($)</th><th></th></tr></thead>
               <tbody>
                 {zones.map(z => (
-                  <tr key={z.name}>
-                    <td>{z.name}</td>
-                    <td style={{fontSize:11}}>{(Array.isArray(z.cps)&&z.cps.length>0?z.cps:z.cp?[z.cp]:[]).join(', ')||'—'}</td>
-                    <td>${z.price.toLocaleString('es-AR')}</td>
-                    <td><button className="btn btn-ghost" style={{padding:'4px 8px',fontSize:12}} onClick={()=>removeZone(z.name)}>✕</button></td>
-                  </tr>
+                  editingZone?.origName === z.name ? (
+                    <tr key={z.name} style={{background:'var(--surface2)'}}>
+                      <td><input className="input" style={{padding:'4px 8px',fontSize:12}} value={editingZone.name} onChange={e=>setEditingZone(p=>({...p,name:e.target.value}))} /></td>
+                      <td><input className="input" style={{padding:'4px 8px',fontSize:11}} value={editingZone.cp} onChange={e=>setEditingZone(p=>({...p,cp:e.target.value}))} placeholder="CPs separados por coma" /></td>
+                      <td><input className="input" style={{padding:'4px 8px',fontSize:12,width:90}} type="number" value={editingZone.price} onChange={e=>setEditingZone(p=>({...p,price:e.target.value}))} /></td>
+                      <td style={{display:'flex',gap:4}}>
+                        <button className="btn btn-success" style={{padding:'4px 8px',fontSize:12}} onClick={saveEditZone}>✓</button>
+                        <button className="btn btn-ghost" style={{padding:'4px 8px',fontSize:12}} onClick={()=>setEditingZone(null)}>✕</button>
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr key={z.name}>
+                      <td>{z.name}</td>
+                      <td style={{fontSize:11}}>{(Array.isArray(z.cps)&&z.cps.length>0?z.cps:z.cp?[z.cp]:[]).join(', ')||'—'}</td>
+                      <td>${z.price.toLocaleString('es-AR')}</td>
+                      <td style={{display:'flex',gap:4}}>
+                        <button className="btn btn-ghost" style={{padding:'4px 8px',fontSize:12}} title="Editar" onClick={()=>setEditingZone({origName:z.name,name:z.name,cp:(Array.isArray(z.cps)?z.cps:z.cp?[z.cp]:[]).join(', '),price:z.price})}>✏️</button>
+                        <button className="btn btn-ghost" style={{padding:'4px 8px',fontSize:12}} onClick={()=>removeZone(z.name)}>✕</button>
+                      </td>
+                    </tr>
+                  )
                 ))}
               </tbody>
             </table>
