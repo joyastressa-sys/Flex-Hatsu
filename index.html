@@ -2096,6 +2096,19 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
     if (db) await db.collection('config').doc('heavy_skus').set({ list: updated });
   };
 
+  const downloadTarifario = () => {
+    if (!zones.length) { alert('No hay zonas cargadas para descargar.'); return; }
+    const wb = window.XLSX.utils.book_new();
+    const rows = zones.map(z => ({
+      'Zona / Barrio': z.name,
+      'Código Postal': (Array.isArray(z.cps) ? z.cps : [z.cp]).filter(Boolean).join(', '),
+      'COSTO': z.price,
+    }));
+    const ws = window.XLSX.utils.json_to_sheet(rows);
+    window.XLSX.utils.book_append_sheet(wb, ws, 'Tarifas');
+    window.XLSX.writeFile(wb, `Tarifario_FLEX_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+
   const addZone = async () => {
     if (!newZone.name || !newZone.price) return;
     const cpList = newZone.cp.split(/[,;\s]+/).map(s=>s.trim()).filter(Boolean);
@@ -2283,13 +2296,24 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
 
       {/* Zones */}
       <div className="card">
-        <div className="card-title">🗺 Tarifas por zona/localidad</div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+          <div className="card-title" style={{marginBottom:0}}>🗺 Tarifas por zona/localidad</div>
+          <button className="btn btn-success" style={{fontSize:12}} onClick={downloadTarifario}>
+            ⬇️ Descargar tarifario actual
+          </button>
+        </div>
         {zones.length > 0 && (
           <div style={{overflowX:'auto',marginBottom:16}}>
+            <div style={{display:'flex',gap:6,marginBottom:8,alignItems:'center'}}>
+              <span style={{fontSize:12,color:'var(--muted)'}}>Ordenar:</span>
+              <button className="btn btn-ghost" style={{fontSize:11,padding:'4px 10px'}} onClick={()=>setZones(p=>[...p].sort((a,b)=>a.name.localeCompare(b.name,'es')))}>A-Z Zona</button>
+              <button className="btn btn-ghost" style={{fontSize:11,padding:'4px 10px'}} onClick={()=>setZones(p=>[...p].sort((a,b)=>{const ca=Number((Array.isArray(a.cps)&&a.cps[0])||a.cp||9999);const cb=Number((Array.isArray(b.cps)&&b.cps[0])||b.cp||9999);return ca-cb;}))}>CP ↑</button>
+              <button className="btn btn-ghost" style={{fontSize:11,padding:'4px 10px'}} onClick={()=>setZones(p=>[...p].sort((a,b)=>a.price-b.price))}>$ ↑</button>
+            </div>
             <table className="tbl">
               <thead><tr><th>Zona/Localidad</th><th>CPs</th><th>Tarifa ($)</th><th></th></tr></thead>
               <tbody>
-                {[...zones].sort((a,b)=>a.name.localeCompare(b.name,'es')).map(z => (
+                {zones.map(z => (
                   <tr key={z.name}>
                     <td>{z.name}</td>
                     <td style={{fontSize:11}}>{(Array.isArray(z.cps)&&z.cps.length>0?z.cps:z.cp?[z.cp]:[]).join(', ')||'—'}</td>
