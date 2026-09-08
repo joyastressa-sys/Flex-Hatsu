@@ -2232,9 +2232,12 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
         addToast('No se pudieron leer zonas', 'Verificá que haya columnas de Zona/Localidad y Tarifa/Precio con valores numéricos', 'alarm');
         return;
       }
-      // FULL REPLACEMENT — discard all existing zones and use only the imported ones
-      setZones(parsedZones);
-      if (db) await db.collection('config').doc('zones').set({ list: parsedZones });
+      // FULL REPLACEMENT — clear everything first, then save new zones
+      setZones([]); // clear React state immediately
+      await db.collection('config').doc('zones').set({ list: [] }); // clear Firestore first
+      await new Promise(r => setTimeout(r, 200)); // small pause to ensure clear is committed
+      setZones(parsedZones); // set new zones in React
+      await db.collection('config').doc('zones').set({ list: parsedZones }); // save new zones to Firestore
       const totalCPs = parsedZones.reduce((s,z)=>s+z.cps.length,0);
       addToast('✅ Tarifario reemplazado', `${parsedZones.length} zona(s) con ${totalCPs} código(s) postal(es) — datos anteriores eliminados`);
     } catch(err) {
