@@ -511,9 +511,22 @@ async function parseLabelsPDF(file) {
     const text = tc.items.map(it => it.str).join(' ');
 
     // Extract fields — Mercado Libre FLEX format
-    const shipId = (text.match(/Envio[:\s]+(\d[\d\s]{6,12}\d)/i) || [])[1]?.replace(/\s/g,'') || null;
-    const packId = (text.match(/Pack ID[:\s]*([\d]+)/i) || [])[1] || null;
-    const ventaId = (text.match(/Venta[:\s]+([\d\s]{10,})/i) || [])[1]?.replace(/\s/g,'') || null;
+    // shipId (Envio) is the primary matching key — present in ALL label formats
+    // Also accept OCR artifacts: "Envfio", "Envío" etc.
+    const shipId = (text.match(/Env[a-záéíóúf]*o[:\s]+(\d[\d\s]{4,14}\d)/i) || [])[1]?.replace(/\s/g,'') || null;
+
+    // ventaNumero = the sale/pack reference shown as "Nro de Venta" — Pack ID or Venta, WITHOUT the "20000" prefix
+    // Format A: "Venta ID: 2000018489691526" or "Venta: 20000 18489691526" → take the part after 20000
+    // Format B: "Pack ID: 2000015060650257" or "Pack ID: 20000 15060650257" → take the part after 20000
+    const rawVentaNum = 
+      (text.match(/Venta\s+ID[:\s]*([\d][\d\s]*\d)/i) || [])[1]?.replace(/\s/g,'') ||
+      (text.match(/Pack\s+ID[:\s]*([\d][\d\s]*\d)/i) || [])[1]?.replace(/\s/g,'') ||
+      (text.match(/\bVenta[:\s]+([\d\s]{6,})/i) || [])[1]?.replace(/\s/g,'') || null;
+    // Strip leading "20000" prefix if present (it's always 5 zeros, not part of the real sale number)
+    const ventaNumero = rawVentaNum ? rawVentaNum.replace(/^20000/, '').replace(/\s/g,'') : null;
+    // Keep these for backward compat with existing saved labels
+    const packId = rawVentaNum || null;
+    const ventaId = ventaNumero || null;
 
     // Agency / external label format (GURA-FLEX style):
     //   Partido at start, Destinatario as name, phone, address CP:XXXX, Observación=SKU, Envio: N (any length)
@@ -587,10 +600,10 @@ async function parseLabelsPDF(file) {
     await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
     const thumb = canvas.toDataURL('image/jpeg', 0.75);
 
-    const labelId = shipId || packId || ventaId || envioExterno;
+    const labelId = shipId || packId || ventaId || envioExterno; // shipId (Envio) is always preferred
     if (labelId) {
       labels.push({
-        id: labelId, shipId, packId, ventaId, envioExterno,
+        id: labelId, shipId, packId, ventaId, ventaNumero, envioExterno,
         sku, cp, partido, dest, loc, tipoEnvio,
         dateLabel: dateM, seller, thumb, page: i,
         matched: false, text, pdfCacheKey: cacheKey, hdThumb: null,
@@ -1396,6 +1409,7 @@ function App() {
       l.shipId === scannedId ||
       l.packId === scannedId ||
       l.ventaId === scannedId ||
+      l.ventaNumero === scannedId ||
       l.envioExterno === scannedId
     );
 
@@ -1783,7 +1797,7 @@ function App() {
                             <input type="checkbox" checked={selectedLabels.length===labels.length && labels.length>0}
                               onChange={e=>setSelectedLabels(e.target.checked ? labels.map(l=>l.id) : [])} />
                           </th>
-                          <th>Etiqueta</th><th>Envío ID</th><th>SKU</th><th>Destinatario</th><th>Localidad</th><th>CP</th><th>Estado</th><th></th>
+                          <th>Etiqueta</th><th>Envío</th><th>Nro de Venta</th><th>SKU</th><th>Destinatario</th><th>Localidad</th><th>CP</th><th>Estado</th><th></th>
                         </tr></thead>
                         <tbody>
                           {labels.map(l => (
@@ -1793,7 +1807,8 @@ function App() {
                                   onChange={e=> setSelectedLabels(p => e.target.checked ? [...p,l.id] : p.filter(x=>x!==l.id)) } />
                               </td>
                               <td>{l.thumb && <img src={l.thumb} className="label-thumb" onClick={()=>setImgModal(l)} />}</td>
-                              <td style={{fontFamily:'monospace',fontSize:12}}>{l.id}</td>
+                              <td style={{fontFamily:'monospace',fontSize:11}}>{l.id}</td>
+                              <td style={{fontFamily:'monospace',fontSize:11,color:'var(--muted)'}}>{l.ventaNumero||l.packId||'—'}</td>
                               <td><span className="chip">{l.sku||'—'}</span>{heavySkus.includes(l.sku) && <span className="badge badge-yellow" style={{marginLeft:4}}>⚖️ Pesado</span>}{l.source==='AGENCIA' && <span className="badge badge-blue" style={{marginLeft:4}}>Agencia</span>}</td>
                               <td style={{fontSize:12}}>{l.dest||'—'}</td>
                               <td style={{fontSize:11}}>{(() => {
