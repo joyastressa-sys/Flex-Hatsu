@@ -201,26 +201,58 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
 
-// ─── MERCADOLIBRE API (OAuth 2.0 Implicit flow) ───────────────────────────────
-// Flujo Implicit: token llega directo en el hash de la URL, sin servidor
+// ─── MERCADOLIBRE API (OAuth 2.0 Authorization Code via Cloudflare Worker) ────
 const ML_APP_ID = '7617976989027751';
 const ML_REDIRECT_URI = window.location.origin + window.location.pathname;
+const ML_TOKEN_PROXY = 'https://ml-token-proxy.joyastressa.workers.dev';
 
 function mlOAuthURL() {
   const params = new URLSearchParams({
-    response_type: 'token',
+    response_type: 'code',
     client_id: ML_APP_ID,
     redirect_uri: ML_REDIRECT_URI,
   });
   return `https://auth.mercadolibre.com.ar/authorization?${params.toString()}`;
 }
 
-// Parse access_token from URL hash after OAuth redirect
-function parseMlTokenFromHash() {
-  const hash = window.location.hash.slice(1);
-  if (!hash) return null;
-  const params = Object.fromEntries(hash.split('&').map(p => { const [k,...v]=p.split('='); return [k, decodeURIComponent(v.join('='))]; }));
-  if (params.access_token) return { token: params.access_token, expiresIn: Number(params.expires_in||21600), ts: Date.now() };
+// Exchange authorization code for token via Cloudflare Worker proxy
+async function exchangeMLCode(code) {
+  try {
+    const res = await fetch(ML_TOKEN_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    if (!res.ok) { console.error('ML proxy error', await res.text()); return null; }
+    const data = await res.json();
+    if (!data.access_token) { console.error('ML proxy no token', data); return null; }
+    return { token: data.access_token, refreshToken: data.refresh_token, expiresIn: data.expires_in || 21600, ts: Date.now() };
+  } catch(e) { console.error('ML proxy fetch error', e); return null; }
+}
+
+// Refresh token via proxy
+async function refreshMLToken(refreshToken) {
+  if (!refreshToken) return null;
+  try {
+    const res = await fetch(ML_TOKEN_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.access_token) return null;
+    return { token: data.access_token, refreshToken: data.refresh_token || refreshToken, expiresIn: data.expires_in || 21600, ts: Date.now() };
+  } catch { return null; }
+}
+
+// Parse authorization code from URL after OAuth redirect
+function parseMlCodeFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const error = params.get('error');
+  if (error) return { error };
+  if (code) return { code };
   return null;
 }
 
@@ -1257,15 +1289,25 @@ function App() {
   useEffect(() => { scansRef.current = scans; }, [scans]);
   useEffect(() => { labelsRef.current = labels; }, [labels]);
 
-  // ── Capture ML OAuth token from URL hash after redirect (Implicit flow) ──
+  // ── Capture ML OAuth code from URL after redirect and exchange for token ──
   useEffect(() => {
-    const parsed = parseMlTokenFromHash();
-    if (parsed && parsed.token) {
-      setMlToken(parsed);
-      window._pendingMlToken = parsed;
-      // Clean URL hash without page reload
-      history.replaceState(null, '', window.location.pathname + window.location.search);
-      addToast('✅ MercadoLibre conectado', 'Tu cuenta de ML quedó vinculada. Los escaneos ahora verifican cancelaciones en tiempo real.');
+    const parsed = parseMlCodeFromURL();
+    if (!parsed) return;
+    history.replaceState(null, '', window.location.pathname);
+    if (parsed.error) {
+      addToast('⚠️ Error ML', `No se pudo conectar: ${parsed.error}`, 'error');
+      return;
+    }
+    if (parsed.code) {
+      exchangeMLCode(parsed.code).then(tokenData => {
+        if (tokenData) {
+          setMlToken(tokenData);
+          window._pendingMlToken = tokenData;
+          addToast('✅ MercadoLibre conectado', 'Tu cuenta de ML quedó vinculada. Los escaneos ahora verifican cancelaciones en tiempo real.');
+        } else {
+          addToast('⚠️ Error ML', 'No se pudo obtener el token. Revisá la consola.', 'error');
+        }
+      });
     }
   }, []);
 
@@ -2533,6 +2575,7 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
             <a href={mlOAuthURL()} className="btn btn-primary" style={{textDecoration:'none',display:'inline-flex'}}>
               🔗 Conectar con MercadoLibre
             </a>
+            <p style={{fontSize:11,color:'var(--muted)',marginTop:8}}>Te redirige a ML y volvés automáticamente con la cuenta conectada.</p>
           </div>
         )}
       </div>
