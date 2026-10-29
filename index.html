@@ -171,6 +171,28 @@
 
   .section-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
   .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+  /* ML CANCELLED OVERLAY */
+  .ml-cancel-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 9000; display: flex; align-items: center; justify-content: center; padding: 20px; animation: fadeIn .2s ease; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .ml-cancel-modal { background: #1a0606; border: 3px solid var(--red); border-radius: 16px; padding: 40px 36px; max-width: 480px; width: 100%; text-align: center; box-shadow: 0 0 60px rgba(239,68,68,.4); animation: scaleIn .2s ease; }
+  @keyframes scaleIn { from { transform: scale(.9); } to { transform: scale(1); } }
+  .ml-cancel-icon { font-size: 72px; margin-bottom: 16px; animation: pulse 1s ease infinite alternate; }
+  @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.1); } }
+  .ml-cancel-title { font-size: 28px; font-weight: 900; color: var(--red); margin-bottom: 8px; letter-spacing: 1px; }
+  .ml-cancel-sub { font-size: 16px; color: #f87171; margin-bottom: 6px; }
+  .ml-cancel-id { font-size: 13px; color: var(--muted); margin-bottom: 24px; font-family: monospace; }
+  .ml-cancel-detail { background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3); border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; text-align: left; }
+  .ml-cancel-detail-row { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; border-bottom: 1px solid rgba(239,68,68,.2); }
+  .ml-cancel-detail-row:last-child { border-bottom: none; }
+  .ml-cancel-detail-label { color: var(--muted); }
+  .ml-cancel-detail-val { font-weight: 600; color: var(--text); }
+
+  /* ML connected badge in header */
+  .ml-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .ml-badge.connected { background: rgba(34,197,94,.15); color: var(--green); border: 1px solid rgba(34,197,94,.3); }
+  .ml-badge.disconnected { background: rgba(245,197,24,.1); color: var(--accent); border: 1px solid rgba(245,197,24,.25); cursor: pointer; }
+  .ml-status-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 </style>
 </head>
 <body>
@@ -178,6 +200,78 @@
 
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
+
+// ─── MERCADOLIBRE API ─────────────────────────────────────────────────────────
+// Tu App ID de ML: creá una en https://developers.mercadolibre.com.ar/
+// Redirect URI debe coincidir EXACTAMENTE con la URL donde está hosteada la app
+const ML_APP_ID = '7617976989027751';
+const ML_REDIRECT_URI = window.location.origin + window.location.pathname;
+
+function mlOAuthURL() {
+  return `https://auth.mercadolibre.com.ar/authorization?response_type=token&client_id=${ML_APP_ID}&redirect_uri=${encodeURIComponent(ML_REDIRECT_URI)}`;
+}
+
+// Parse access_token from URL hash after OAuth redirect
+function parseMlTokenFromHash() {
+  const hash = window.location.hash.slice(1);
+  if (!hash) return null;
+  const params = Object.fromEntries(hash.split('&').map(p => p.split('=')));
+  if (params.access_token) return { token: params.access_token, expiresIn: Number(params.expires_in||21600), ts: Date.now() };
+  return null;
+}
+
+async function fetchShipmentML(shipId, token) {
+  if (!token || !shipId) return null;
+  try {
+    const res = await fetch(`https://api.mercadolibre.com/shipments/${shipId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
+async function fetchOrderML(orderId, token) {
+  if (!token || !orderId) return null;
+  try {
+    const res = await fetch(`https://api.mercadolibre.com/orders/${orderId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
+const ML_CANCELLED_STATUSES = ['cancelled', 'not_delivered'];
+const ML_CANCELLED_SUBSTATUSES = ['receiver_absent', 'bad_address', 'stolen', 'returned_sender'];
+
+function isShipmentCancelled(shipData) {
+  if (!shipData) return false;
+  const st = (shipData.status || '').toLowerCase();
+  const sub = (shipData.substatus || '').toLowerCase();
+  return ML_CANCELLED_STATUSES.includes(st) || ML_CANCELLED_SUBSTATUSES.includes(sub);
+}
+
+function mlStatusLabel(status, substatus) {
+  const map = {
+    'cancelled': 'Cancelado',
+    'not_delivered': 'No entregado',
+    'pending': 'Pendiente',
+    'ready_to_ship': 'Listo para enviar',
+    'shipped': 'En camino',
+    'delivered': 'Entregado',
+    'returned': 'Devuelto',
+  };
+  const subMap = {
+    'receiver_absent': 'Destinatario ausente',
+    'bad_address': 'Dirección incorrecta',
+    'stolen': 'Paquete robado',
+    'returned_sender': 'Devuelto al remitente',
+  };
+  const st = (status||'').toLowerCase();
+  const sub = (substatus||'').toLowerCase();
+  return subMap[sub] || map[st] || status || '—';
+}
 
 // ─── FIREBASE CONFIG ──────────────────────────────────────────────────────────
 const FIREBASE_CONFIG_KEY = 'flex_tracker_firebase_config';
@@ -1150,11 +1244,36 @@ function App() {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [agencyMatchModal, setAgencyMatchModal] = useState(null); // { raw, scannedId, candidates[] }
   const [sessions, setSessions] = useState([]);        // past sessions
+  const [mlToken, setMlToken] = useState(null);        // ML access token { token, ts, expiresIn }
+  const [mlCancelModal, setMlCancelModal] = useState(null); // { shipData, scannedId } when cancelled
+  const [mlChecking, setMlChecking] = useState(false); // loading while querying ML API
   const scanRef = useRef(null);
   const scansRef = useRef(scans);
   const labelsRef = useRef(labels);
   useEffect(() => { scansRef.current = scans; }, [scans]);
   useEffect(() => { labelsRef.current = labels; }, [labels]);
+
+  // ── Capture ML OAuth token from URL hash after redirect ──
+  useEffect(() => {
+    const parsed = parseMlTokenFromHash();
+    if (parsed && parsed.token) {
+      setMlToken(parsed);
+      // Save to Firestore if db is ready (may not be yet, retry in db effect)
+      window._pendingMlToken = parsed;
+      // Clean URL hash without page reload
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      addToast('✅ MercadoLibre conectado', 'Tu cuenta de ML quedó vinculada. Los escaneos ahora verifican cancelaciones en tiempo real.');
+    }
+  }, []);
+
+  // ── Persist pending ML token once db is ready ──
+  useEffect(() => {
+    if (!db) return;
+    if (window._pendingMlToken) {
+      db.collection('config').doc('ml_token').set(window._pendingMlToken);
+      window._pendingMlToken = null;
+    }
+  }, [db]);
 
   // ── Init Firebase ──
   useEffect(() => {
@@ -1185,6 +1304,14 @@ function App() {
     // config
     db.collection('config').doc('heavy_skus').get().then(d => { if(d.exists) setHeavySkus(d.data().list||[]); });
     db.collection('config').doc('zones').get().then(d => { if(d.exists) setZones(d.data().list||[]); });
+    // ML token from Firestore
+    db.collection('config').doc('ml_token').get().then(d => {
+      if (d.exists) {
+        const t = d.data();
+        const ageMs = Date.now() - (t.ts||0);
+        if (ageMs < (t.expiresIn||21600)*1000) setMlToken(t); // still valid
+      }
+    });
     // past sessions
     db.collection('sessions').orderBy('date','desc').limit(30).get().then(snap => {
       setSessions(snap.docs.map(d=>({id:d.id,...d.data()})));
@@ -1441,15 +1568,51 @@ function App() {
         playAlarm();
       }
     } else {
-      // Match! Use ref values to avoid stale closure
-      const updLabels = currentLabels.map((l,i) => i===matchIdx ? {...l, matched:true, matchedAt: new Date().toISOString()} : l);
-      const newScan = { raw, scannedId, scanSource, ts: new Date().toISOString(), matched: true, labelId: currentLabels[matchIdx].id };
-      const updScans = [...currentScans, newScan];
+      // Match! First check ML API for cancellation if token available
+      const matchedLabel = currentLabels[matchIdx];
+      const shipIdToCheck = matchedLabel.id || matchedLabel.shipId || scannedId;
+
+      if (mlToken?.token && ML_APP_ID) {
+        setMlChecking(true);
+        try {
+          const shipData = await fetchShipmentML(shipIdToCheck, mlToken.token);
+          setMlChecking(false);
+
+          if (shipData && isShipmentCancelled(shipData)) {
+            // ⛔ CANCELLED — show blocking modal, do NOT register scan
+            playAlarm();
+            setMlCancelModal({ shipData, scannedId: shipIdToCheck, label: matchedLabel });
+            scanRef.current?.focus();
+            return;
+          }
+
+          // Enrich label with ML data if available
+          if (shipData) {
+            const addr = shipData.receiver_address;
+            const enriched = {
+              mlStatus: shipData.status,
+              mlSubstatus: shipData.substatus,
+              mlPhone: addr?.phone?.number || '',
+              mlStreet: addr ? `${addr.street_name||''} ${addr.street_number||''}`.trim() : '',
+            };
+            const updLabelsEnriched = currentLabels.map((l,i) => i===matchIdx ? {...l, ...enriched} : l);
+            labelsRef.current = updLabelsEnriched;
+            setLabels(updLabelsEnriched);
+          }
+        } catch { setMlChecking(false); }
+      }
+
+      // Proceed with normal scan registration
+      const freshLabels = labelsRef.current;
+      const freshScans = scansRef.current;
+      const updLabels = freshLabels.map((l,i) => i===freshLabels.findIndex(x=>x.id===matchedLabel.id) ? {...l, matched:true, matchedAt: new Date().toISOString()} : l);
+      const newScan = { raw, scannedId, scanSource, ts: new Date().toISOString(), matched: true, labelId: matchedLabel.id };
+      const updScans = [...freshScans, newScan];
       setLabels(updLabels);
       setScans(updScans);
       const toPersistScan = updLabels.map(({pdfCacheKey, text, thumb, hdThumb, ...r}) => r);
       await db.collection('sessions').doc(session.id).update({ labels: toPersistScan, scans: updScans });
-      addToast('✅ Paquete registrado', `Envío ${scannedId} — ${currentLabels[matchIdx].dest || currentLabels[matchIdx].loc || ''}`);
+      addToast('✅ Paquete registrado', `Envío ${scannedId} — ${matchedLabel.dest || matchedLabel.loc || ''}`);
     }
     scanRef.current?.focus();
   };
@@ -1589,10 +1752,53 @@ function App() {
     {id:'config', label:'⚙️ Config'},
   ];
 
+  // ── Disconnect ML ──
+  const disconnectML = async () => {
+    if (!confirm('¿Desconectar tu cuenta de MercadoLibre?')) return;
+    setMlToken(null);
+    if (db) await db.collection('config').doc('ml_token').delete();
+    addToast('ML desconectado', 'Ya no se verificarán cancelaciones en tiempo real');
+  };
+
   return (
     <div className="app">
       <ToastContainer toasts={toasts} onAction={handleToastAction} onDismiss={dismissToast} />
       <ScrollNav />
+
+      {/* ── ML Cancelled Modal ── */}
+      {mlCancelModal && (
+        <div className="ml-cancel-overlay" onClick={e=>{ if(e.target===e.currentTarget) setMlCancelModal(null); }}>
+          <div className="ml-cancel-modal">
+            <div className="ml-cancel-icon">⛔</div>
+            <div className="ml-cancel-title">ENVÍO CANCELADO</div>
+            <div className="ml-cancel-sub">NO ENTREGAR ESTE PAQUETE</div>
+            <div className="ml-cancel-id">Envío #{mlCancelModal.scannedId}</div>
+            {mlCancelModal.label && (
+              <div className="ml-cancel-detail">
+                {mlCancelModal.label.dest && <div className="ml-cancel-detail-row"><span className="ml-cancel-detail-label">Destinatario</span><span className="ml-cancel-detail-val">{mlCancelModal.label.dest}</span></div>}
+                {mlCancelModal.label.loc && <div className="ml-cancel-detail-row"><span className="ml-cancel-detail-label">Localidad</span><span className="ml-cancel-detail-val">{mlCancelModal.label.loc}</span></div>}
+                {mlCancelModal.label.cp && <div className="ml-cancel-detail-row"><span className="ml-cancel-detail-label">CP</span><span className="ml-cancel-detail-val">{mlCancelModal.label.cp}</span></div>}
+                {mlCancelModal.label.sku && <div className="ml-cancel-detail-row"><span className="ml-cancel-detail-label">SKU</span><span className="ml-cancel-detail-val">{mlCancelModal.label.sku}</span></div>}
+                <div className="ml-cancel-detail-row"><span className="ml-cancel-detail-label">Estado ML</span><span className="ml-cancel-detail-val" style={{color:'var(--red)'}}>{mlStatusLabel(mlCancelModal.shipData?.status, mlCancelModal.shipData?.substatus)}</span></div>
+              </div>
+            )}
+            <p style={{color:'var(--muted)',fontSize:13,marginBottom:20,lineHeight:1.6}}>
+              Este envío fue cancelado en MercadoLibre. Retiralo del lote y devolvelo al depósito. No fue registrado como escaneado.
+            </p>
+            <button className="btn btn-danger" style={{width:'100%',justifyContent:'center',fontSize:16,padding:'14px'}} onClick={()=>setMlCancelModal(null)}>
+              Entendido — Retirar del lote
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── ML checking spinner overlay ── */}
+      {mlChecking && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:8000,display:'flex',alignItems:'center',justifyContent:'center',gap:14,flexDirection:'column'}}>
+          <div className="spinner" style={{width:40,height:40,borderWidth:4}} />
+          <div style={{color:'#fff',fontSize:15,fontWeight:600}}>Verificando en MercadoLibre…</div>
+        </div>
+      )}
 
       {/* Pending modal */}
       {pendingModal && (
@@ -1664,12 +1870,23 @@ function App() {
           <span className="logo-text">Control de Entregas</span>
         </div>
         <div className="header-right">
+          {/* ML connection status badge */}
+          {ML_APP_ID && (
+            mlToken?.token ? (
+              <span className="ml-badge connected" title="Cuenta ML conectada — verificación de cancelaciones activa" onClick={()=>setTab('config')}>
+                <span className="ml-status-dot"/>ML conectado
+              </span>
+            ) : (
+              <span className="ml-badge disconnected" title="Conectar MercadoLibre para detectar cancelaciones" onClick={()=>setTab('config')}>
+                ⚠ ML desconectado
+              </span>
+            )
+          )}
           {session && (
             <span className={`badge ${session.open ? 'badge-green' : 'badge-red'}`}>
               {session.open ? '● Sesión abierta' : '○ Sesión cerrada'} {session.date}
             </span>
           )}
-
         </div>
       </header>
 
@@ -2080,7 +2297,7 @@ function App() {
         {/* ── CONFIG TAB ── */}
         {tab==='config' && (
           <>
-            <ConfigPanel db={db} heavySkus={heavySkus} setHeavySkus={setHeavySkus} zones={zones} setZones={setZones} addToast={addToast} onSelectFolder={selectLocalFolder} folderName={folderName} />
+            <ConfigPanel db={db} heavySkus={heavySkus} setHeavySkus={setHeavySkus} zones={zones} setZones={setZones} addToast={addToast} onSelectFolder={selectLocalFolder} folderName={folderName} mlToken={mlToken} onDisconnectML={disconnectML} />
           </>
         )}
 
@@ -2090,7 +2307,7 @@ function App() {
 }
 
 // ─── CONFIG PANEL ─────────────────────────────────────────────────────────────
-function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, onSelectFolder, folderName }) {
+function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, onSelectFolder, folderName, mlToken, onDisconnectML }) {
   const [newSku, setNewSku] = useState('');
   const [newZone, setNewZone] = useState({ name:'', cp:'', price:'' });
   const [editingZone, setEditingZone] = useState(null); // {origName, name, cp, price}
@@ -2266,6 +2483,56 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
   return (
     <>
       <div className="section-title">Configuración</div>
+
+      {/* MercadoLibre API */}
+      <div className="card">
+        <div className="card-title">🟡 Integración MercadoLibre</div>
+        {!ML_APP_ID ? (
+          <div style={{background:'rgba(245,197,24,.08)',border:'1px solid rgba(245,197,24,.3)',borderRadius:8,padding:'16px',marginBottom:12}}>
+            <p style={{color:'var(--accent)',fontWeight:700,fontSize:14,marginBottom:8}}>⚙️ Configuración pendiente del desarrollador</p>
+            <p style={{color:'var(--muted)',fontSize:13,lineHeight:1.7}}>
+              Para activar la verificación de cancelaciones en tiempo real, el desarrollador debe completar el <code style={{color:'var(--accent)'}}>ML_APP_ID</code> en el código fuente.<br/>
+              <strong style={{color:'var(--text)'}}>Pasos:</strong>
+              <br/>1. Crear una app en <a href="https://developers.mercadolibre.com.ar/" target="_blank" style={{color:'var(--blue)'}}>developers.mercadolibre.com.ar</a>
+              <br/>2. Configurar el Redirect URI: <code style={{color:'var(--accent)',fontSize:11}}>{ML_REDIRECT_URI}</code>
+              <br/>3. Copiar el App ID y pegarlo en el código donde dice <code style={{color:'var(--accent)'}}>ML_APP_ID = ''</code>
+            </p>
+          </div>
+        ) : mlToken?.token ? (
+          <div>
+            <div style={{display:'flex',alignItems:'center',gap:10,background:'rgba(34,197,94,.1)',border:'1px solid rgba(34,197,94,.3)',borderRadius:8,padding:'12px 16px',marginBottom:14}}>
+              <span style={{fontSize:24}}>✅</span>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:700,color:'var(--green)'}}>Cuenta conectada</div>
+                <div style={{fontSize:12,color:'var(--muted)'}}>Al escanear, se verifica automáticamente si el envío fue cancelado en ML antes de registrarlo.</div>
+              </div>
+            </div>
+            <div style={{background:'var(--surface2)',borderRadius:8,padding:'12px 16px',marginBottom:14,fontSize:13,color:'var(--muted)'}}>
+              <div style={{marginBottom:4}}><strong style={{color:'var(--text)'}}>¿Qué hace la integración?</strong></div>
+              <div>• Al escanear un QR, consulta la API de ML en tiempo real</div>
+              <div>• Si el envío está <strong style={{color:'var(--red)'}}>cancelado</strong>, muestra una alerta roja bloqueante</div>
+              <div>• El paquete cancelado NO se registra como escaneado</div>
+              <div>• También trae teléfono y dirección del destinatario cuando está disponible</div>
+            </div>
+            <button className="btn btn-ghost" style={{fontSize:13}} onClick={onDisconnectML}>🔌 Desconectar ML</button>
+          </div>
+        ) : (
+          <div>
+            <p style={{color:'var(--muted)',fontSize:13,lineHeight:1.7,marginBottom:16}}>
+              Conectá tu cuenta de MercadoLibre para que la app verifique automáticamente si un envío está cancelado al momento de escanearlo.<br/>
+              <strong style={{color:'var(--text)'}}>Te redirige a ML y volvés automáticamente.</strong>
+            </p>
+            <div style={{background:'var(--surface2)',borderRadius:8,padding:'12px 16px',marginBottom:16,fontSize:13,color:'var(--muted)'}}>
+              <div style={{marginBottom:4}}><strong style={{color:'var(--text)'}}>¿Qué permisos se piden?</strong></div>
+              <div>• Lectura de tus envíos (shipments) — solo lectura, no modifica nada</div>
+              <div>• Lectura de órdenes de compra — para datos del comprador</div>
+            </div>
+            <a href={mlOAuthURL()} className="btn btn-primary" style={{textDecoration:'none',display:'inline-flex'}}>
+              🔗 Conectar con MercadoLibre
+            </a>
+          </div>
+        )}
+      </div>
 
       {/* Local folder */}
       <div className="card">
