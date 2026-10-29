@@ -201,22 +201,85 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
 
-// ─── MERCADOLIBRE API ─────────────────────────────────────────────────────────
-// Tu App ID de ML: creá una en https://developers.mercadolibre.com.ar/
-// Redirect URI debe coincidir EXACTAMENTE con la URL donde está hosteada la app
+// ─── MERCADOLIBRE API (OAuth 2.0 Authorization Code + PKCE) ──────────────────
+// Flujo PKCE: no requiere servidor, funciona desde GitHub Pages
 const ML_APP_ID = '7617976989027751';
 const ML_REDIRECT_URI = window.location.origin + window.location.pathname;
 
-function mlOAuthURL() {
-  return `https://auth.mercadolibre.com.ar/authorization?response_type=token&client_id=${ML_APP_ID}&redirect_uri=${encodeURIComponent(ML_REDIRECT_URI)}`;
+// PKCE helpers
+async function generatePKCE() {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  const verifier = btoa(String.fromCharCode(...array)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+  const encoder = new TextEncoder();
+  const data = encoder.encode(verifier);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  const challenge = btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+  return { verifier, challenge };
 }
 
-// Parse access_token from URL hash after OAuth redirect
-function parseMlTokenFromHash() {
-  const hash = window.location.hash.slice(1);
-  if (!hash) return null;
-  const params = Object.fromEntries(hash.split('&').map(p => p.split('=')));
-  if (params.access_token) return { token: params.access_token, expiresIn: Number(params.expires_in||21600), ts: Date.now() };
+async function mlOAuthURL() {
+  const { verifier, challenge } = await generatePKCE();
+  sessionStorage.setItem('ml_pkce_verifier', verifier);
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: ML_APP_ID,
+    redirect_uri: ML_REDIRECT_URI,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+  });
+  return `https://auth.mercadolibre.com.ar/authorization?${params.toString()}`;
+}
+
+// Exchange authorization code for access token
+async function exchangeMLCode(code) {
+  const verifier = sessionStorage.getItem('ml_pkce_verifier');
+  if (!verifier) return null;
+  try {
+    const res = await fetch('https://api.mercadolibre.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: ML_APP_ID,
+        code,
+        redirect_uri: ML_REDIRECT_URI,
+        code_verifier: verifier,
+      }).toString()
+    });
+    if (!res.ok) { console.error('ML token exchange failed', await res.text()); return null; }
+    const data = await res.json();
+    sessionStorage.removeItem('ml_pkce_verifier');
+    return { token: data.access_token, refreshToken: data.refresh_token, expiresIn: data.expires_in || 21600, ts: Date.now() };
+  } catch(e) { console.error('ML token exchange error', e); return null; }
+}
+
+// Refresh access token using refresh_token
+async function refreshMLToken(refreshToken) {
+  if (!refreshToken) return null;
+  try {
+    const res = await fetch('https://api.mercadolibre.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id: ML_APP_ID,
+        refresh_token: refreshToken,
+      }).toString()
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return { token: data.access_token, refreshToken: data.refresh_token || refreshToken, expiresIn: data.expires_in || 21600, ts: Date.now() };
+  } catch { return null; }
+}
+
+// Parse authorization code from URL query params after OAuth redirect
+function parseMlCodeFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const error = params.get('error');
+  if (error) return { error };
+  if (code) return { code };
   return null;
 }
 
@@ -1253,16 +1316,26 @@ function App() {
   useEffect(() => { scansRef.current = scans; }, [scans]);
   useEffect(() => { labelsRef.current = labels; }, [labels]);
 
-  // ── Capture ML OAuth token from URL hash after redirect ──
+  // ── Capture ML OAuth code from URL query params after redirect (PKCE flow) ──
   useEffect(() => {
-    const parsed = parseMlTokenFromHash();
-    if (parsed && parsed.token) {
-      setMlToken(parsed);
-      // Save to Firestore if db is ready (may not be yet, retry in db effect)
-      window._pendingMlToken = parsed;
-      // Clean URL hash without page reload
-      history.replaceState(null, '', window.location.pathname + window.location.search);
-      addToast('✅ MercadoLibre conectado', 'Tu cuenta de ML quedó vinculada. Los escaneos ahora verifican cancelaciones en tiempo real.');
+    const parsed = parseMlCodeFromURL();
+    if (!parsed) return;
+    // Clean URL immediately so user doesn't see ?code=...
+    history.replaceState(null, '', window.location.pathname);
+    if (parsed.error) {
+      addToast('⚠️ Error ML', `No se pudo conectar: ${parsed.error}`, 'error');
+      return;
+    }
+    if (parsed.code) {
+      exchangeMLCode(parsed.code).then(tokenData => {
+        if (tokenData) {
+          setMlToken(tokenData);
+          window._pendingMlToken = tokenData;
+          addToast('✅ MercadoLibre conectado', 'Tu cuenta de ML quedó vinculada. Los escaneos ahora verifican cancelaciones en tiempo real.');
+        } else {
+          addToast('⚠️ Error ML', 'No se pudo obtener el token. Intentá conectar de nuevo.', 'error');
+        }
+      });
     }
   }, []);
 
@@ -2527,9 +2600,9 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
               <div>• Lectura de tus envíos (shipments) — solo lectura, no modifica nada</div>
               <div>• Lectura de órdenes de compra — para datos del comprador</div>
             </div>
-            <a href={mlOAuthURL()} className="btn btn-primary" style={{textDecoration:'none',display:'inline-flex'}}>
+            <button className="btn btn-primary" onClick={async()=>{ const url=await mlOAuthURL(); window.location.href=url; }}>
               🔗 Conectar con MercadoLibre
-            </a>
+            </button>
           </div>
         )}
       </div>
