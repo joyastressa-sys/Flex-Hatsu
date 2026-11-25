@@ -1273,6 +1273,7 @@ function App() {
   const [mlToken, setMlToken] = useState(null);        // ML access token { token, ts, expiresIn }
   const [mlCancelModal, setMlCancelModal] = useState(null); // { shipData, scannedId } when cancelled
   const [mlChecking, setMlChecking] = useState(false); // loading while querying ML API
+  const [mlBulkChecking, setMlBulkChecking] = useState(false); // loading while bulk-checking all labels
   const scanRef = useRef(null);
   const scansRef = useRef(scans);
   const labelsRef = useRef(labels);
@@ -1711,6 +1712,46 @@ function App() {
     scanRef.current?.focus();
   };
 
+  // ── Bulk ML status check: verifica todas las etiquetas con ID contra la API ──
+  const checkAllLabelsML = async () => {
+    if (!mlToken?.token || !labels.length) return;
+    setMlBulkChecking(true);
+    const toCheck = labels.filter(l => l.id);
+    // Chequear de a 3 en paralelo para no saturar la API
+    const CHUNK = 3;
+    let updatedLabels = [...labels];
+    let cancelledCount = 0;
+    for (let i = 0; i < toCheck.length; i += CHUNK) {
+      const chunk = toCheck.slice(i, i + CHUNK);
+      await Promise.all(chunk.map(async l => {
+        try {
+          const shipData = await fetchShipmentML(l.id, mlToken.token);
+          if (!shipData) return;
+          const cancelled = isShipmentCancelled(shipData);
+          if (cancelled) cancelledCount++;
+          updatedLabels = updatedLabels.map(x => x.id === l.id
+            ? { ...x, mlStatus: shipData.status, mlSubstatus: shipData.substatus, mlCancelled: cancelled, mlCheckedAt: new Date().toISOString() }
+            : x
+          );
+        } catch {}
+      }));
+    }
+    setLabels(updatedLabels);
+    labelsRef.current = updatedLabels;
+    // Persistir en Firestore
+    if (db && session?.id) {
+      const toPersist = updatedLabels.map(({pdfCacheKey, text, thumb, hdThumb, ...r}) => r);
+      await db.collection('sessions').doc(session.id).update({ labels: toPersist });
+    }
+    setMlBulkChecking(false);
+    if (cancelledCount > 0) {
+      addToast(`⚠️ ${cancelledCount} envío(s) CANCELADO(S)`, 'Revisá las filas marcadas en rojo antes de entregar', 'alarm');
+      playAlarm();
+    } else {
+      addToast('✅ Verificación ML completa', `${toCheck.length} envíos verificados, todos activos`);
+    }
+  };
+
   const closeSessionById = async (sessionId) => {
     if (!db) return;
     try {
@@ -2033,14 +2074,22 @@ function App() {
                 {/* Labels table */}
                 {labels.length > 0 && (
                   <div className="card">
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:8}}>
                       <div className="card-title" style={{marginBottom:0}}>Etiquetas en sesión ({labels.length})</div>
-                      {selectedLabels.length > 0 && (
-                        <button className="btn btn-danger" style={{fontSize:12,padding:'6px 12px'}}
-                          onClick={()=>{ if(confirm(`¿Borrar ${selectedLabels.length} etiqueta(s) seleccionada(s)?`)){ deleteLabels(selectedLabels); setSelectedLabels([]); } }}>
-                          🗑 Borrar {selectedLabels.length} seleccionada(s)
-                        </button>
-                      )}
+                      <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                        {mlToken?.token && (
+                          <button className="btn btn-ghost" style={{fontSize:12,padding:'6px 12px'}}
+                            onClick={checkAllLabelsML} disabled={mlBulkChecking}>
+                            {mlBulkChecking ? <><span className="spinner"/> Verificando...</> : '🔄 Verificar estados ML'}
+                          </button>
+                        )}
+                        {selectedLabels.length > 0 && (
+                          <button className="btn btn-danger" style={{fontSize:12,padding:'6px 12px'}}
+                            onClick={()=>{ if(confirm(`¿Borrar ${selectedLabels.length} etiqueta(s) seleccionada(s)?`)){ deleteLabels(selectedLabels); setSelectedLabels([]); } }}>
+                            🗑 Borrar {selectedLabels.length} seleccionada(s)
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div style={{overflowX:'auto'}}>
                       <table className="tbl">
@@ -2053,7 +2102,7 @@ function App() {
                         </tr></thead>
                         <tbody>
                           {labels.map(l => (
-                            <tr key={l.id}>
+                            <tr key={l.id} style={l.mlCancelled ? {background:'rgba(220,38,38,0.08)'} : {}}>
                               <td>
                                 <input type="checkbox" checked={selectedLabels.includes(l.id)}
                                   onChange={e=> setSelectedLabels(p => e.target.checked ? [...p,l.id] : p.filter(x=>x!==l.id)) } />
@@ -2072,7 +2121,10 @@ function App() {
                                 return loc || l.cp || '—';
                               })()}</td>
                               <td>{l.cp||'—'}</td>
-                              <td>{l.matched ? <span className="badge badge-green">✓ Escaneado</span> : <span className="badge badge-yellow">Pendiente</span>}</td>
+                              <td>
+                                {l.mlCancelled && <span className="badge badge-red" style={{marginRight:4}}>⛔ Cancelado</span>}
+                                {l.matched ? <span className="badge badge-green">✓ Escaneado</span> : <span className="badge badge-yellow">Pendiente</span>}
+                              </td>
                               <td>
                                 <button className="btn btn-ghost" style={{padding:'5px 9px',fontSize:13}}
                                   title="Borrar esta etiqueta"
