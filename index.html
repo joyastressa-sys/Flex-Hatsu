@@ -362,18 +362,28 @@ function normLocText(s) {
 // the Resumen tab, and the Excel/PDF billing exports, so results are always consistent.
 function findZoneForLabel(label, zones) {
   const lcp = (label.cp||'').trim();
+  const lcpNum = parseInt(lcp, 10);
 
-  // CP exact match — zones can have multiple CPs (z.cps array) or legacy single z.cp
+  if (!lcp) return null;
+
+  // 1) Exact CP match — zones can have multiple CPs (z.cps array) or legacy single z.cp
   // Name is NOT used for matching: first CP match wins
-  if (lcp) {
-    const byCP = zones.filter(z => {
-      if (Array.isArray(z.cps)) return z.cps.map(c=>String(c).trim()).includes(lcp);
-      return z.cp && String(z.cp).trim() === lcp;
-    });
-    if (byCP.length >= 1) return byCP[0];
+  const byCP = zones.filter(z => {
+    if (Array.isArray(z.cps) && z.cps.length > 0) return z.cps.map(c=>String(c).trim()).includes(lcp);
+    return z.cp && String(z.cp).trim() === lcp;
+  });
+  if (byCP.length >= 1) return byCP[0];
+
+  // 2) Range match — cpFrom/cpTo inclusive (e.g. CABA: 1000–1499)
+  if (!isNaN(lcpNum)) {
+    const byRange = zones.filter(z =>
+      z.cpFrom != null && z.cpTo != null &&
+      lcpNum >= Number(z.cpFrom) && lcpNum <= Number(z.cpTo)
+    );
+    if (byRange.length >= 1) return byRange[0];
   }
 
-  // No CP on label or no CP match — zone name is informational only, no text matching
+  // No match
   return null;
 }
 
@@ -2260,61 +2270,59 @@ function App() {
         {/* ── HISTORIAL TAB ── */}
         {tab==='historial' && (
           <>
-            <div className="section-title">Historial de sesiones</div>
+            <BillingRangePanel sessions={sessions} zones={zones} heavySkus={heavySkus} folderHandleRef={folderHandleRef} />
+
+            <div className="section-title" style={{marginTop:16}}>Historial de sesiones</div>
             {sessions.length === 0 ? (
               <div className="card empty"><div className="empty-icon">🗓</div><p>No hay sesiones guardadas</p></div>
             ) : (
-              <>
-                <div className="card">
-                  <div style={{overflowX:'auto'}}>
-                    <table className="tbl">
-                      <thead><tr><th>Fecha</th><th>Etiquetas</th><th>Escaneados</th><th>No escaneados</th><th>Costo</th><th>Estado</th><th>Acciones</th></tr></thead>
-                      <tbody>
-                        {sessions.map(s => {
-                          const lbs = s.labels||[];
-                          const sc = lbs.filter(l=>l.matched);
-                          const un = lbs.filter(l=>!l.matched);
-                          const cost = calcSessionCost(lbs, zones, heavySkus);
-                          return (
-                            <tr key={s.id}>
-                              <td style={{fontWeight:600}}>{s.date}</td>
-                              <td>{lbs.length}</td>
-                              <td><span className="badge badge-green">{sc.length}</span></td>
-                              <td>{un.length > 0 ? <span className="badge badge-yellow">{un.length}</span> : <span className="badge badge-green">0</span>}</td>
-                              <td style={{fontWeight:600}}>{cost.total > 0 ? `$${cost.total.toLocaleString('es-AR')}` : '—'}</td>
-                              <td>{s.open ? <span className="badge badge-blue">Abierta</span> : <span className="badge badge-red">Cerrada</span>}</td>
-                              <td>
-                                <div style={{display:'flex',gap:6}}>
-                                  {s.open ? (
-                                    <button className="btn btn-ghost" style={{padding:'5px 9px',fontSize:12}}
-                                      title="Cerrar esta sesión"
-                                      onClick={()=>{ if(confirm(`¿Cerrar la sesión del ${s.date}?`)) closeSessionById(s.id); }}>
-                                      🔒 Cerrar
-                                    </button>
-                                  ) : (
-                                    <button className="btn btn-ghost" style={{padding:'5px 9px',fontSize:12}}
-                                      title="Reabrir esta sesión para seguir escaneando"
-                                      onClick={()=>{ if(confirm(`¿Reabrir la sesión del ${s.date}? Podrás volver a escanear paquetes.`)) reopenSessionById(s.id, s.date); }}>
-                                      🔓 Reabrir
-                                    </button>
-                                  )}
-                                  <button className="btn btn-ghost" style={{padding:'5px 9px',fontSize:12,color:'var(--red)'}}
-                                    title="Eliminar esta sesión por completo"
-                                    onClick={()=>{ if(confirm(`¿Eliminar definitivamente la sesión del ${s.date}? Esto borra sus etiquetas y escaneos guardados, no se puede deshacer.`)) deleteSession(s.id, s.date); }}>
-                                    🗑
+              <div className="card">
+                <div style={{overflowX:'auto'}}>
+                  <table className="tbl">
+                    <thead><tr><th>Fecha</th><th>Etiquetas</th><th>Escaneados</th><th>No escaneados</th><th>Costo</th><th>Estado</th><th>Acciones</th></tr></thead>
+                    <tbody>
+                      {sessions.map(s => {
+                        const lbs = s.labels||[];
+                        const sc = lbs.filter(l=>l.matched);
+                        const un = lbs.filter(l=>!l.matched);
+                        const cost = calcSessionCost(lbs, zones, heavySkus);
+                        return (
+                          <tr key={s.id}>
+                            <td style={{fontWeight:600}}>{s.date}</td>
+                            <td>{lbs.length}</td>
+                            <td><span className="badge badge-green">{sc.length}</span></td>
+                            <td>{un.length > 0 ? <span className="badge badge-yellow">{un.length}</span> : <span className="badge badge-green">0</span>}</td>
+                            <td style={{fontWeight:600}}>{cost.total > 0 ? `$${cost.total.toLocaleString('es-AR')}` : '—'}</td>
+                            <td>{s.open ? <span className="badge badge-blue">Abierta</span> : <span className="badge badge-red">Cerrada</span>}</td>
+                            <td>
+                              <div style={{display:'flex',gap:6}}>
+                                {s.open ? (
+                                  <button className="btn btn-ghost" style={{padding:'5px 9px',fontSize:12}}
+                                    title="Cerrar esta sesión"
+                                    onClick={()=>{ if(confirm(`¿Cerrar la sesión del ${s.date}?`)) closeSessionById(s.id); }}>
+                                    🔒 Cerrar
                                   </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                                ) : (
+                                  <button className="btn btn-ghost" style={{padding:'5px 9px',fontSize:12}}
+                                    title="Reabrir esta sesión para seguir escaneando"
+                                    onClick={()=>{ if(confirm(`¿Reabrir la sesión del ${s.date}? Podrás volver a escanear paquetes.`)) reopenSessionById(s.id, s.date); }}>
+                                    🔓 Reabrir
+                                  </button>
+                                )}
+                                <button className="btn btn-ghost" style={{padding:'5px 9px',fontSize:12,color:'var(--red)'}}
+                                  title="Eliminar esta sesión por completo"
+                                  onClick={()=>{ if(confirm(`¿Eliminar definitivamente la sesión del ${s.date}? Esto borra sus etiquetas y escaneos guardados, no se puede deshacer.`)) deleteSession(s.id, s.date); }}>
+                                  🗑
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-
-                <BillingRangePanel sessions={sessions} zones={zones} heavySkus={heavySkus} folderHandleRef={folderHandleRef} />
-              </>
+              </div>
             )}
           </>
         )}
@@ -2334,7 +2342,7 @@ function App() {
 // ─── CONFIG PANEL ─────────────────────────────────────────────────────────────
 function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, onSelectFolder, folderName, mlToken, onDisconnectML }) {
   const [newSku, setNewSku] = useState('');
-  const [newZone, setNewZone] = useState({ name:'', cp:'', price:'' });
+  const [newZone, setNewZone] = useState({ name:'', cp:'', price:'', useRange:false, cpFrom:'', cpTo:'' });
   const [editingZone, setEditingZone] = useState(null); // {origName, name, cp, price}
   const [importingSkus, setImportingSkus] = useState(false);
   const [importingZones, setImportingZones] = useState(false);
@@ -2359,7 +2367,7 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
     const wb = window.XLSX.utils.book_new();
     const rows = zones.map(z => ({
       'Zona / Barrio': z.name,
-      'Código Postal': (Array.isArray(z.cps) ? z.cps : [z.cp]).filter(Boolean).join(', '),
+      'Código Postal': z.cpFrom!=null&&z.cpTo!=null?`${z.cpFrom}–${z.cpTo}`:(Array.isArray(z.cps)?z.cps:[z.cp]).filter(Boolean).join(', '),
       'COSTO': z.price,
     }));
     const ws = window.XLSX.utils.json_to_sheet(rows);
@@ -2369,13 +2377,19 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
 
   const addZone = async () => {
     if (!newZone.price) return;
-    const cpList = newZone.cp.split(/[,;\s]+/).map(s=>s.trim()).filter(Boolean);
-    // Name is optional/informational; fall back to CP list if empty
-    const zoneName = newZone.name.trim() || (cpList.length ? 'CP ' + cpList.join(', ') : 'Sin nombre');
-    const z = { name: zoneName, cp: cpList[0]||'', cps: cpList, price: Number(newZone.price) };
+    let z;
+    if (newZone.useRange) {
+      if (!newZone.cpFrom || !newZone.cpTo) return;
+      const zoneName = newZone.name.trim() || `CP ${newZone.cpFrom}–${newZone.cpTo}`;
+      z = { name: zoneName, cpFrom: Number(newZone.cpFrom), cpTo: Number(newZone.cpTo), cp:'', cps:[], price: Number(newZone.price) };
+    } else {
+      const cpList = newZone.cp.split(/[,;\s]+/).map(s=>s.trim()).filter(Boolean);
+      const zoneName = newZone.name.trim() || (cpList.length ? 'CP ' + cpList.join(', ') : 'Sin nombre');
+      z = { name: zoneName, cp: cpList[0]||'', cps: cpList, price: Number(newZone.price) };
+    }
     const updated = [...zones, z];
     setZones(updated);
-    setNewZone({ name:'', cp:'', price:'' });
+    setNewZone({ name:'', cp:'', price:'', useRange:false, cpFrom:'', cpTo:'' });
     if (db) await db.collection('config').doc('zones').set({ list: updated });
     addToast('Zona agregada', z.name);
   };
@@ -2389,11 +2403,15 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
   // Find a column value in a row object by trying several possible header name fragments
   const saveEditZone = async () => {
     if (!editingZone || !editingZone.name.trim()) return;
-    const cpList = editingZone.cp.split(/[,;\s]+/).map(s=>s.trim()).filter(Boolean);
-    const updated = zones.map(z => z.name === editingZone.origName
-      ? { name: editingZone.name.trim(), cp: cpList[0]||'', cps: cpList, price: Number(editingZone.price) }
-      : z
-    );
+    let zoneData;
+    if (editingZone.isRange && editingZone.cpFrom != null && editingZone.cpTo != null) {
+      // Preserve range fields
+      zoneData = { name: editingZone.name.trim(), cpFrom: Number(editingZone.cpFrom), cpTo: Number(editingZone.cpTo), cp:'', cps:[], price: Number(editingZone.price) };
+    } else {
+      const cpList = editingZone.cp.split(/[,;\s]+/).map(s=>s.trim()).filter(Boolean);
+      zoneData = { name: editingZone.name.trim(), cp: cpList[0]||'', cps: cpList, price: Number(editingZone.price) };
+    }
+    const updated = zones.map(z => z.name === editingZone.origName ? zoneData : z);
     setZones(updated);
     setEditingZone(null);
     if (db) await db.collection('config').doc('zones').set({ list: updated });
@@ -2463,32 +2481,57 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
         if (!ok) { setImportingZones(false); e.target.value = ''; return; }
       }
 
-      // Parse each row — multiple rows with the same zone name get grouped
-      // so all their CPs are collected into one zone entry with a cps[] array
-      const zoneMap = {}; // name -> { name, cps[], price }
-      rows.forEach(r => {
-        const name = findCol(r, ['zona', 'localidad', 'destino', 'barrio']);
-        const cp = findCol(r, ['cp', 'codigo postal', 'código postal']);
-        const priceRaw = findCol(r, ['tarifa', 'precio', 'valor', 'costo']);
-        const price = priceRaw !== null ? Number(String(priceRaw).replace(/[^\d.,-]/g,'').replace(',','.')) : NaN;
-        if (!name || isNaN(price)) return;
-        const key = String(name).trim().toLowerCase();
-        if (!zoneMap[key]) {
-          zoneMap[key] = { name: String(name).trim(), cps: [], price };
-        }
-        if (cp) {
-          const cpStr = String(cp).trim();
-          if (cpStr && !zoneMap[key].cps.includes(cpStr)) zoneMap[key].cps.push(cpStr);
-        }
-        zoneMap[key].price = price; // last row wins for price
-      });
+      // Formato soportado:
+      // A) Simple: columnas CP y Tarifa (una fila por CP — formato del tarifario exportado)
+      // B) Legado: columnas Zona/Localidad, CP (opcional), Tarifa
+      const firstRow = rows[0];
+      const hasZoneCol = !!findCol(firstRow, ['zona', 'localidad', 'destino', 'barrio']);
+      const hasCPCol   = !!findCol(firstRow, ['cp', 'codigo postal', 'código postal']);
+      const hasPriceCol= !!findCol(firstRow, ['tarifa', 'precio', 'valor', 'costo']);
 
-      const parsedZones = Object.values(zoneMap).map(z => ({
-        ...z, cp: z.cps[0] || '' // keep cp for backward compat
-      }));
+      if (!hasPriceCol) {
+        addToast('Columna de tarifa no encontrada', 'El archivo necesita una columna llamada Tarifa, Precio, Valor o Costo', 'alarm');
+        return;
+      }
+
+      let parsedZones = [];
+
+      if (!hasZoneCol && hasCPCol) {
+        // Formato simple: CP + Tarifa — cada fila es un CP individual
+        const cpMap = {}; // cp -> price
+        rows.forEach(r => {
+          const cp = findCol(r, ['cp', 'codigo postal', 'código postal']);
+          const priceRaw = findCol(r, ['tarifa', 'precio', 'valor', 'costo']);
+          const price = priceRaw !== null ? Number(String(priceRaw).replace(/[^\d.,]/g,'').replace(',','.')) : NaN;
+          const cpStr = cp ? String(cp).trim() : '';
+          if (!cpStr || isNaN(price)) return;
+          if (!cpMap[cpStr]) cpMap[cpStr] = price; // primera tarifa gana si hay duplicados
+        });
+        parsedZones = Object.entries(cpMap).map(([cp, price]) => ({
+          name: 'CP ' + cp, cp, cps: [cp], price
+        }));
+      } else {
+        // Formato legado: Zona + CP + Tarifa agrupados por nombre de zona
+        const zoneMap = {};
+        rows.forEach(r => {
+          const name = findCol(r, ['zona', 'localidad', 'destino', 'barrio']);
+          const cp = findCol(r, ['cp', 'codigo postal', 'código postal']);
+          const priceRaw = findCol(r, ['tarifa', 'precio', 'valor', 'costo']);
+          const price = priceRaw !== null ? Number(String(priceRaw).replace(/[^\d.,]/g,'').replace(',','.')) : NaN;
+          if (!name || isNaN(price)) return;
+          const key = String(name).trim().toLowerCase();
+          if (!zoneMap[key]) zoneMap[key] = { name: String(name).trim(), cps: [], price };
+          if (cp) {
+            const cpStr = String(cp).trim();
+            if (cpStr && !zoneMap[key].cps.includes(cpStr)) zoneMap[key].cps.push(cpStr);
+          }
+          zoneMap[key].price = price;
+        });
+        parsedZones = Object.values(zoneMap).map(z => ({ ...z, cp: z.cps[0] || '' }));
+      }
 
       if (!parsedZones.length) {
-        addToast('No se pudieron leer zonas', 'Verificá que haya columnas de Zona/Localidad y Tarifa/Precio con valores numéricos', 'alarm');
+        addToast('No se pudieron leer zonas', 'Verificá que el archivo tenga columnas CP y Tarifa con valores numéricos', 'alarm');
         return;
       }
       // FULL REPLACEMENT — clear everything first, then save new zones
@@ -2649,10 +2692,10 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
                   ) : (
                     <tr key={z.name}>
                       <td>{z.name}</td>
-                      <td style={{fontSize:11}}>{(Array.isArray(z.cps)&&z.cps.length>0?z.cps:z.cp?[z.cp]:[]).join(', ')||'—'}</td>
+                      <td style={{fontSize:11}}>{z.cpFrom!=null&&z.cpTo!=null?`${z.cpFrom}–${z.cpTo}`:(Array.isArray(z.cps)&&z.cps.length>0?z.cps:z.cp?[z.cp]:[]).join(', ')||'—'}</td>
                       <td>${z.price.toLocaleString('es-AR')}</td>
                       <td style={{display:'flex',gap:4}}>
-                        <button className="btn btn-ghost" style={{padding:'4px 8px',fontSize:12}} title="Editar" onClick={()=>setEditingZone({origName:z.name,name:z.name,cp:(Array.isArray(z.cps)?z.cps:z.cp?[z.cp]:[]).join(', '),price:z.price})}>✏️</button>
+                        <button className="btn btn-ghost" style={{padding:'4px 8px',fontSize:12}} title="Editar" onClick={()=>setEditingZone({origName:z.name,name:z.name,cp:z.cpFrom!=null&&z.cpTo!=null?`${z.cpFrom}-${z.cpTo}`:(Array.isArray(z.cps)?z.cps:z.cp?[z.cp]:[]).join(', '),price:z.price,isRange:z.cpFrom!=null&&z.cpTo!=null,cpFrom:z.cpFrom,cpTo:z.cpTo})}>✏️</button>
                         <button className="btn btn-ghost" style={{padding:'4px 8px',fontSize:12}} onClick={()=>removeZone(z.name)}>✕</button>
                       </td>
                     </tr>
@@ -2662,12 +2705,28 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
             </table>
           </div>
         )}
-        <div style={{display:'grid',gridTemplateColumns:'1fr 100px 120px auto',gap:8,alignItems:'center'}}>
-          <input className="input" placeholder="Nombre (informativo)" value={newZone.name} onChange={e=>setNewZone(p=>({...p,name:e.target.value}))} />
-          <input className="input" placeholder="CP (ej: 1401,1402)" value={newZone.cp} onChange={e=>setNewZone(p=>({...p,cp:e.target.value}))} />
-          <input className="input" placeholder="$ tarifa" type="number" value={newZone.price} onChange={e=>setNewZone(p=>({...p,price:e.target.value}))} />
-          <button className="btn btn-primary" onClick={addZone}>Agregar</button>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+          <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'var(--muted)',cursor:'pointer',userSelect:'none'}}>
+            <input type="checkbox" checked={newZone.useRange} onChange={e=>setNewZone(p=>({...p,useRange:e.target.checked}))} />
+            Rango de CPs (ej: CABA 1000–1499)
+          </label>
         </div>
+        {newZone.useRange ? (
+          <div style={{display:'grid',gridTemplateColumns:'1fr 90px 90px 120px auto',gap:8,alignItems:'center'}}>
+            <input className="input" placeholder="Nombre (informativo)" value={newZone.name} onChange={e=>setNewZone(p=>({...p,name:e.target.value}))} />
+            <input className="input" placeholder="CP desde" type="number" value={newZone.cpFrom} onChange={e=>setNewZone(p=>({...p,cpFrom:e.target.value}))} />
+            <input className="input" placeholder="CP hasta" type="number" value={newZone.cpTo} onChange={e=>setNewZone(p=>({...p,cpTo:e.target.value}))} />
+            <input className="input" placeholder="$ tarifa" type="number" value={newZone.price} onChange={e=>setNewZone(p=>({...p,price:e.target.value}))} />
+            <button className="btn btn-primary" onClick={addZone}>Agregar</button>
+          </div>
+        ) : (
+          <div style={{display:'grid',gridTemplateColumns:'1fr 100px 120px auto',gap:8,alignItems:'center'}}>
+            <input className="input" placeholder="Nombre (informativo)" value={newZone.name} onChange={e=>setNewZone(p=>({...p,name:e.target.value}))} />
+            <input className="input" placeholder="CP (ej: 1401,1402)" value={newZone.cp} onChange={e=>setNewZone(p=>({...p,cp:e.target.value}))} />
+            <input className="input" placeholder="$ tarifa" type="number" value={newZone.price} onChange={e=>setNewZone(p=>({...p,price:e.target.value}))} />
+            <button className="btn btn-primary" onClick={addZone}>Agregar</button>
+          </div>
+        )}
         <p style={{color:'var(--muted)',fontSize:12,marginTop:10}}>Los envíos pesados se calculan como tarifa × 2</p>
         <div style={{display:'flex',alignItems:'center',gap:10,margin:'14px 0'}}>
           <div style={{flex:1,borderTop:'1px solid var(--border)'}} />
@@ -2678,7 +2737,7 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
           {importingZones ? <span className="spinner"/> : '📂'} Importar desde Excel/CSV
           <input type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={importZonesFromExcel} disabled={importingZones} />
         </label>
-        <p style={{color:'var(--muted)',fontSize:12,marginTop:8}}>Columnas esperadas: Zona/Localidad, CP (opcional), Tarifa/Precio. Si una zona ya existe, se actualiza su tarifa.</p>
+        <p style={{color:'var(--muted)',fontSize:12,marginTop:8}}>Formato simple: columnas <strong>CP</strong> y <strong>Tarifa</strong>, una fila por código postal. También acepta el formato anterior con columna Zona/Localidad.</p>
       </div>
 
     </>
