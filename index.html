@@ -356,40 +356,24 @@ function normLocText(s) {
 }
 
 // Given a label, find the SINGLE best matching zone.
-// Priority: 1) exact CP match, 2) normalized text contains zone name as whole word, 3) null
+// Matching is based EXCLUSIVELY on postal code (CP) number — zone name is informational only.
+// Priority: 1) exact CP match (first zone wins if multiple share same CP), 2) null
 // This is THE single source of truth for zone matching — used by calcSessionCost,
 // the Resumen tab, and the Excel/PDF billing exports, so results are always consistent.
 function findZoneForLabel(label, zones) {
   const lcp = (label.cp||'').trim();
-  const locText = [label.partido, label.loc].filter(Boolean).join(' ');
-  const lLoc = normLocText(locText);
 
-  // 1) CP exact match — zones can have multiple CPs (z.cps array) or legacy single z.cp
+  // CP exact match — zones can have multiple CPs (z.cps array) or legacy single z.cp
+  // Name is NOT used for matching: first CP match wins
   if (lcp) {
     const byCP = zones.filter(z => {
       if (Array.isArray(z.cps)) return z.cps.map(c=>String(c).trim()).includes(lcp);
       return z.cp && String(z.cp).trim() === lcp;
     });
-    if (byCP.length === 1) return byCP[0];
-    if (byCP.length > 1) {
-      const locMatch = byCP.find(z => {
-        const zn = normLocText(z.name);
-        return lLoc === zn || new RegExp('(^|\\s)' + zn.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '(\\s|$)').test(lLoc);
-      });
-      if (locMatch) return locMatch;
-      return byCP[0];
-    }
+    if (byCP.length >= 1) return byCP[0];
   }
 
-  // 2) Text match: zone name is fully contained in label's partido+loc (word boundary)
-  const textCandidates = [...zones]
-    .sort((a,b) => b.name.length - a.name.length)
-    .filter(z => {
-      const zn = normLocText(z.name);
-      return lLoc === zn || new RegExp('(^|\\s)' + zn.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '(\\s|$)').test(lLoc);
-    });
-  if (textCandidates.length > 0) return textCandidates[0];
-
+  // No CP on label or no CP match — zone name is informational only, no text matching
   return null;
 }
 
@@ -405,10 +389,7 @@ function calcSessionCost(sessionLabels, zones, heavySkus) {
     if (z) {
       if (!zoneMap[z.name]) zoneMap[z.name] = { zone: z, labels: [] };
       zoneMap[z.name].labels.push(l);
-      // Track each unique label locality for display (show what the label says, not the zone name)
-      if (!zoneMap[z.name].labelLocs) zoneMap[z.name].labelLocs = {};
-      const lDisplay = [l.partido, l.loc].filter(Boolean).join(' / ') || l.cp || z.name;
-      zoneMap[z.name].labelLocs[lDisplay] = (zoneMap[z.name].labelLocs[lDisplay]||0) + 1;
+      // Zone name is the display name — locality is informational only
     } else {
       unzoned.push(l);
     }
@@ -417,9 +398,8 @@ function calcSessionCost(sessionLabels, zones, heavySkus) {
   const byZone = Object.values(zoneMap).map(({ zone, labels }) => {
     const heavyCount = labels.filter(l => heavySkus.includes(l.sku)).length;
     const subtotal = labels.length * zone.price + heavyCount * zone.price;
-    // Build display: if all labels have same locality, show that; otherwise show "Zone (n localities)"
-    const locs = Object.entries(zoneMap[zone.name]?.labelLocs || {});
-    const displayName = locs.length === 1 ? locs[0][0] : locs.length === 0 ? zone.name : zone.name + ' (' + locs.map(([k,v])=>k+(v>1?' x'+v:'')).join(', ') + ')';
+    // Display always uses zone name — locality name is informational only
+    const displayName = zone.name;
     const zoneCps = Array.isArray(zone.cps) ? zone.cps.map(String) : [zone.cp].filter(Boolean);
     return { name: zone.name, displayName, cp: zoneCps[0]||'', cps: zoneCps, count: labels.length, heavyCount, price: zone.price, subtotal };
   }).sort((a,b) => b.subtotal - a.subtotal);
@@ -2388,9 +2368,11 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
   };
 
   const addZone = async () => {
-    if (!newZone.name || !newZone.price) return;
+    if (!newZone.price) return;
     const cpList = newZone.cp.split(/[,;\s]+/).map(s=>s.trim()).filter(Boolean);
-    const z = { name: newZone.name, cp: cpList[0]||'', cps: cpList, price: Number(newZone.price) };
+    // Name is optional/informational; fall back to CP list if empty
+    const zoneName = newZone.name.trim() || (cpList.length ? 'CP ' + cpList.join(', ') : 'Sin nombre');
+    const z = { name: zoneName, cp: cpList[0]||'', cps: cpList, price: Number(newZone.price) };
     const updated = [...zones, z];
     setZones(updated);
     setNewZone({ name:'', cp:'', price:'' });
@@ -2681,8 +2663,8 @@ function ConfigPanel({ db, heavySkus, setHeavySkus, zones, setZones, addToast, o
           </div>
         )}
         <div style={{display:'grid',gridTemplateColumns:'1fr 100px 120px auto',gap:8,alignItems:'center'}}>
-          <input className="input" placeholder="Localidad" value={newZone.name} onChange={e=>setNewZone(p=>({...p,name:e.target.value}))} />
-          <input className="input" placeholder="CP (varios: 1401,1402)" value={newZone.cp} onChange={e=>setNewZone(p=>({...p,cp:e.target.value}))} />
+          <input className="input" placeholder="Nombre (informativo)" value={newZone.name} onChange={e=>setNewZone(p=>({...p,name:e.target.value}))} />
+          <input className="input" placeholder="CP (ej: 1401,1402)" value={newZone.cp} onChange={e=>setNewZone(p=>({...p,cp:e.target.value}))} />
           <input className="input" placeholder="$ tarifa" type="number" value={newZone.price} onChange={e=>setNewZone(p=>({...p,price:e.target.value}))} />
           <button className="btn btn-primary" onClick={addZone}>Agregar</button>
         </div>
